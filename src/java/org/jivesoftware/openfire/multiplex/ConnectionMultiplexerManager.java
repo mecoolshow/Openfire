@@ -117,7 +117,7 @@ public class ConnectionMultiplexerManager implements SessionEventListener {
         sessionManager = XMPPServer.getInstance().getSessionManager();
         // Start thread that will send heartbeats to Connection Managers every 30 seconds
         // to keep connections open.
-        TimerTask heartbeatTask = new TimerTask() {
+        /*TimerTask heartbeatTask = new TimerTask() {
             @Override
 			public void run() {
                 try {
@@ -130,7 +130,7 @@ public class ConnectionMultiplexerManager implements SessionEventListener {
                 }
             }
         };
-        TaskEngine.getInstance().schedule(heartbeatTask, 30*JiveConstants.SECOND, 30*JiveConstants.SECOND);
+        TaskEngine.getInstance().schedule(heartbeatTask, 30*JiveConstants.SECOND, 30*JiveConstants.SECOND);*/
     }
 
     /**

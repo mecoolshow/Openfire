@@ -273,29 +273,80 @@ public class PresenceManagerImpl extends BasicModule implements PresenceManager,
             }
             lastActivityCache.put(username, offlinePresenceDate.getTime());
 
-            // Insert data into the database.
-            Connection con = null;
-            PreparedStatement pstmt = null;
-            try {
-                con = DbConnectionManager.getConnection();
-                pstmt = con.prepareStatement(INSERT_OFFLINE_PRESENCE);
-                pstmt.setString(1, username);
-                if (offlinePresence != null) {
-                    DbConnectionManager.setLargeTextField(pstmt, 2, offlinePresence);
-                }
-                else {
-                    pstmt.setNull(2, Types.VARCHAR);
-                }
-                pstmt.setString(3, StringUtils.dateToMillis(offlinePresenceDate));
-                pstmt.execute();
-            }
-            catch (SQLException sqle) {
-                Log.error("Error storing offline presence of user: " + username, sqle);
-            }
-            finally {
-                DbConnectionManager.closeConnection(pstmt, con);
-            }
+            // insert offline presence (deleting first if necessary)
+
+            insertOfflinePresenceFromDB(username, offlinePresence, offlinePresenceDate);
         }
+    }
+
+    private void insertOfflinePresenceFromDB(String username, String offlinePresence, java.util.Date offlinePresenceDate)
+    {
+
+        // Insert data into the database.
+
+        Connection con = null;
+
+        PreparedStatement pstmtDel = null;
+
+        PreparedStatement pstmtIns = null;
+
+        boolean abortTransaction = false;
+
+
+
+        try {
+
+                con = DbConnectionManager.getTransactionConnection();
+
+
+
+                pstmtDel = con.prepareStatement(DELETE_OFFLINE_PRESENCE);
+
+                pstmtDel.setString(1, username);
+
+                pstmtDel.execute();
+
+
+
+                pstmtIns = con.prepareStatement(INSERT_OFFLINE_PRESENCE);
+
+                pstmtIns.setString(1, username);
+
+                if (offlinePresence != null)
+                {
+                    DbConnectionManager.setLargeTextField(pstmtIns, 2, offlinePresence);
+                }
+
+                else {
+
+                    pstmtIns.setNull(2, Types.VARCHAR);
+
+                }
+
+            pstmtIns.setString(3, StringUtils.dateToMillis(offlinePresenceDate));
+
+            pstmtIns.execute();
+
+            }
+
+            catch (SQLException sqle) {
+
+                Log.error("Error storing offline presence of user: " + username, sqle);
+
+                        abortTransaction = true;
+
+                    }
+
+                finally {
+
+                    	DbConnectionManager.closeStatement(pstmtDel);
+
+                    	DbConnectionManager.closeStatement(pstmtIns);
+
+                   		DbConnectionManager.closeTransactionConnection(con, abortTransaction);
+
+                    }
+
     }
 
     public void handleProbe(Presence packet) throws UnauthorizedException {
