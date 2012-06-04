@@ -2,8 +2,8 @@
 
 <!--
     $RCSfile: build.xml,v $
-    $Revision: 12844 $
-    $Date: 2011-10-01 09:29:40 -0500 (Sat, 01 Oct 2011) $
+    $Revision: 12232 $
+    $Date: 2011-04-09 07:37:18 -0400 (Sat, 09 Apr 2011) $
 
     This software is published under the terms of the Apache License, Version 2.0,
     a copy of which is included in this distribution.
@@ -67,7 +67,7 @@
     <property name="version.major" value="3"/>
     <property name="version.minor" value="7"/>
     <property name="version.revision" value="1"/>
-    <property name="version.extra" value=""/>    <!-- For 'beta' or 'alpha' -->
+    <property name="version.extra" value="alpha"/>    <!-- For 'beta' or 'alpha' -->
     <property name="dist.prefix" value="openfire"/>
 
     <property file="${basedir}/build/build.properties"/>

@@ -20,6 +20,8 @@ import java.util.regex.PatternSyntaxException;
 public class ContentFilterTest extends TestCase {
     private ContentFilter filter;
 
+
+
     public static void main(String[] args) {
         junit.textui.TestRunner.run(ContentFilterTest.class);
     }

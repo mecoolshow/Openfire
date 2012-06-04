@@ -45,6 +45,7 @@ public class ContentFilter {
     private String mask;
 
 
+
     /**
      * A default instance will allow all message content.
      *
