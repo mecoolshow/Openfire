@@ -1,10 +1,10 @@
 *.class
 *.idea
 *.iml
-/target
-/work
+/target/
+/work/
+/out/
 
 # Package Files #
-*.jar
 *.war
 *.ear
