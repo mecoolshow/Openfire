@@ -20,6 +20,7 @@
 
 package org.jivesoftware.openfire.muc.spi;
 
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -31,14 +32,15 @@ import java.util.Queue;
 import java.util.TimeZone;
 import java.util.Timer;
 import java.util.TimerTask;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import com.sun.jmx.snmp.tasks.Task;
 import org.dom4j.DocumentHelper;
 import org.dom4j.Element;
+import org.jivesoftware.database.CachedPreparedStatement;
+import org.jivesoftware.database.DbConnectionManager;
 import org.jivesoftware.openfire.PacketRouter;
 import org.jivesoftware.openfire.RoutingTable;
 import org.jivesoftware.openfire.XMPPServer;
@@ -98,7 +100,7 @@ import org.xmpp.resultsetmanagement.ResultSet;
 public class MultiUserChatServiceImpl implements Component, MultiUserChatService,
         ServerItemsProvider, DiscoInfoProvider, DiscoItemsProvider {
 
-	private static final Logger Log = LoggerFactory.getLogger(MultiUserChatServiceImpl.class);
+    private static final Logger Log = LoggerFactory.getLogger(MultiUserChatServiceImpl.class);
 
     private static final FastDateFormat dateFormatter = FastDateFormat
             .getInstance(JiveConstants.XMPP_DELAY_DATETIME_FORMAT, TimeZone.getTimeZone("UTC"));
@@ -129,6 +131,9 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
      * Task that flushes room conversation logs to the database.
      */
     private LogConversationTask logConversationTask;
+
+    private AtomicLong archivedMessages = new AtomicLong(0);
+
     /**
      * the chat service's hostname (subdomain)
      */
@@ -162,12 +167,12 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
      * The handler of packets with namespace jabber:iq:register for the server.
      */
     private IQMUCRegisterHandler registerHandler = null;
-    
+
     /**
      * The handler of search requests ('jabber:iq:search' namespace).
      */
     private IQMUCSearchHandler searchHandler = null;
-    
+
     /**
      * The total time all agents took to chat *
      */
@@ -178,6 +183,10 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
      * presence.
      */
     private Timer timer = new Timer("MUC cleanup");
+
+    private ExecutorService logArchiver = Executors.newSingleThreadExecutor();
+    private ExecutorService logArchiverTasker = Executors.newFixedThreadPool(4);
+    private ScheduledExecutorService logPeek = Executors.newSingleThreadScheduledExecutor();
 
     /**
      * Flag that indicates if the service should provide information about locked rooms when
@@ -209,7 +218,7 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
     /**
      * Queue that holds the messages to log for the rooms that need to log their conversations.
      */
-    private Queue<ConversationLogEntry> logQueue = new LinkedBlockingQueue<ConversationLogEntry>(100000);
+    private Queue<ConversationLogEntry> logQueue = new LinkedBlockingQueue<ConversationLogEntry>(600000);
 
     /**
      * Max number of hours that a persistent room may be empty before the service removes the
@@ -264,20 +273,20 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
     private List<Element> extraDiscoIdentities = new ArrayList<Element>();
 
     /**
-	 * Create a new group chat server.
-	 * 
-	 * @param subdomain
-	 *            Subdomain portion of the conference services (for example,
-	 *            conference for conference.example.org)
-	 * @param description
-	 *            Short description of service for disco and such. If
-	 *            <tt>null</tt> or empty, a default value will be used.
-	 * @param isHidden
-	 *            True if this service should be hidden from services views.
-	 * @throws IllegalArgumentException
-	 *             if the provided subdomain is an invalid, according to the JID
-	 *             domain definition.
-	 */
+     * Create a new group chat server.
+     *
+     * @param subdomain
+     *            Subdomain portion of the conference services (for example,
+     *            conference for conference.example.org)
+     * @param description
+     *            Short description of service for disco and such. If
+     *            <tt>null</tt> or empty, a default value will be used.
+     * @param isHidden
+     *            True if this service should be hidden from services views.
+     * @throws IllegalArgumentException
+     *             if the provided subdomain is an invalid, according to the JID
+     *             domain definition.
+     */
     public MultiUserChatServiceImpl(String subdomain, String description, Boolean isHidden) {
         // Check subdomain and throw an IllegalArgumentException if its invalid
         new JID(null,subdomain + "." + XMPPServer.getInstance().getServerInfo().getXMPPDomain(), null);
@@ -374,11 +383,12 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
 
     public void initialize(JID jid, ComponentManager componentManager) {
         initialize(XMPPServer.getInstance());
-
     }
 
     public void shutdown() {
-
+        Log.warn("Shutting down logging tasks");
+        logArchiverTasker.shutdownNow();
+        logArchiver.shutdownNow();
     }
 
     public String getServiceDomain() {
@@ -397,7 +407,7 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
          * Remove any user that has been idle for longer than the user timeout time.
          */
         @Override
-		public void run() {
+        public void run() {
             checkForTimedOutUsers();
         }
     }
@@ -443,9 +453,9 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
     /**
      * Logs the conversation of the rooms that have this feature enabled.
      */
-    private class LogConversationTask extends TimerTask {
-        @Override
-		public void run() {
+    private class LogConversationTask implements Runnable {
+
+        public void run() {
             try {
                 logConversation();
             }
@@ -455,17 +465,64 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
         }
     }
 
-    private void logConversation() {
-        ConversationLogEntry entry;
-        boolean success;
-        for (int index = 0; index <= log_batch_size && !logQueue.isEmpty(); index++) {
-            entry = logQueue.poll();
-            if (entry != null) {
-                success = MUCPersistenceManager.saveConversationLogEntry(entry);
+    private class LoggingTask implements Runnable {
+        private final Collection<ConversationLogEntry> conversations;
+
+        public LoggingTask(Collection<ConversationLogEntry> input)
+        {
+            conversations = new ArrayList<ConversationLogEntry>(input);
+        }
+
+        public void run() {
+            try {
+                MUCPersistenceManager.saveConversationLogEntries(conversations);
+                boolean success = MUCPersistenceManager.saveConversationLogEntries(conversations);
                 if (!success) {
-                    logQueue.add(entry);
+                    ((LinkedBlockingQueue) logQueue).addAll(conversations);
+                }
+                else{
+                    archivedMessages.addAndGet(conversations.size());
                 }
             }
+            catch (Throwable e) {
+                Log.error(LocaleUtils.getLocalizedString("admin.error"), e);
+            }
+        }
+    }
+
+    private void logConversation() throws InterruptedException, SQLException{
+        Log.info("Started log archiving task");
+
+        List<ConversationLogEntry> entries = new ArrayList<ConversationLogEntry>(log_batch_size);
+
+        ConversationLogEntry entry;
+
+        while(true)
+        {
+            if(entries.size()  > 500 && ((ThreadPoolExecutor)logArchiverTasker).getActiveCount() >= 4)
+            {
+                Log.warn("Entries queue is full and ThreadPool is fully active.");
+
+                //keep cpu from thrashing
+                Thread.sleep(500);
+                continue;
+            }
+            entry = ((LinkedBlockingQueue<ConversationLogEntry>) logQueue).poll(1000, TimeUnit.MILLISECONDS);
+
+            if(entry == null)
+                continue;
+
+            entries.add(entry);
+
+            //Didn't want to queue up a million single message tasks if I could avoid it.
+            if(!logQueue.isEmpty() && entries.size() < 500 || ((ThreadPoolExecutor)logArchiverTasker).getActiveCount() >= 4)
+                continue;
+
+
+            LoggingTask task = new LoggingTask(entries);
+            entries.clear();
+
+            logArchiverTasker.execute(task);
         }
     }
 
@@ -489,9 +546,10 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
      */
     private class CleanupTask extends TimerTask {
         @Override
-		public void run() {
+        public void run() {
             if (ClusterManager.isClusteringStarted() && !ClusterManager.isSeniorClusterMember()) {
                 // Do nothing if we are in a cluster and this JVM is not the senior cluster member
+
                 return;
             }
             try {
@@ -774,7 +832,8 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
     }
 
     public void setLogConversationsTimeout(int timeout) {
-        if (this.log_timeout == timeout) {
+
+        /*if (this.log_timeout == timeout) {
             return;
         }
         // Cancel the existing task because the timeout has changed
@@ -786,7 +845,7 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
         logConversationTask = new LogConversationTask();
         timer.schedule(logConversationTask, log_timeout, log_timeout);
         // Set the new property value
-        MUCPersistenceManager.setProperty(chatServiceName, "tasks.log.timeout", Integer.toString(timeout));
+        MUCPersistenceManager.setProperty(chatServiceName, "tasks.log.timeout", Integer.toString(timeout));*/
     }
 
     public int getLogConversationsTimeout() {
@@ -983,6 +1042,8 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
         }
     }
 
+    private Long lastNumber = new Long(0);
+
     public void start() {
         // Run through the users every 5 minutes after a 5 minutes server startup delay (default
         // values)
@@ -991,7 +1052,20 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
         // Log the room conversations every 5 minutes after a 5 minutes server startup delay
         // (default values)
         logConversationTask = new LogConversationTask();
-        timer.schedule(logConversationTask, log_timeout, log_timeout);
+
+        logArchiver.execute(logConversationTask);
+
+        logPeek.scheduleAtFixedRate(new Runnable() {
+            public void run() {
+                Long currentArchiveSize = archivedMessages.get();
+
+                Log.warn(String.format("Log Queue has %d entries. %s entries written per second (averaged).",
+                        logQueue.size(), ((currentArchiveSize - lastNumber) / 10)).toString());
+
+                lastNumber = currentArchiveSize;
+            }
+        }, 10, 10, TimeUnit.SECONDS);
+
         // Remove unused rooms from memory
         cleanupTask = new CleanupTask();
         timer.schedule(cleanupTask, CLEANUP_FREQUENCY, CLEANUP_FREQUENCY);
@@ -1006,6 +1080,7 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
         params.add(getServiceDomain());
         Log.info(LocaleUtils.getLocalizedString("startup.starting.muc", params));
         // Load all the persistent rooms to memory
+        ClusterManager.shutdown();
         for (LocalMUCRoom room : MUCPersistenceManager.loadRoomsFromDB(this, this.getCleanupDate(), router)) {
             rooms.put(room.getName().toLowerCase(), room);
         }
@@ -1141,6 +1216,7 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
         }
     }
 
+
     public void messageBroadcastedTo(int numOccupants) {
         // Increment counter of received messages that where broadcasted by one
         inMessages.incrementAndGet();
@@ -1151,18 +1227,18 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
 
     public Iterator<DiscoServerItem> getItems() {
         // Check if the service is disabled. Info is not available when
-		// disabled.
-		if (!isServiceEnabled())
-		{
-			return null;
-		}
-		
-		final ArrayList<DiscoServerItem> items = new ArrayList<DiscoServerItem>();
-		final DiscoServerItem item = new DiscoServerItem(new JID(
-			getServiceDomain()), getDescription(), null, null, this, this);
-		items.add(item);
-		return items.iterator();
-	}
+        // disabled.
+        if (!isServiceEnabled())
+        {
+            return null;
+        }
+
+        final ArrayList<DiscoServerItem> items = new ArrayList<DiscoServerItem>();
+        final DiscoServerItem item = new DiscoServerItem(new JID(
+                getServiceDomain()), getDescription(), null, null, this, this);
+        items.add(item);
+        return items.iterator();
+    }
 
     public Iterator<Element> getIdentities(String name, String node, JID senderJID) {
         ArrayList<Element> identities = new ArrayList<Element>();
@@ -1396,25 +1472,25 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
             return null;
         }
         List<DiscoItem> answer = new ArrayList<DiscoItem>();
-		if (name == null && node == null)
-		{
-			// Answer all the public rooms as items
-			for (MUCRoom room : rooms.values())
-			{
-				if (canDiscoverRoom(room))
-				{
-					answer.add(new DiscoItem(room.getRole().getRoleAddress(),
-						room.getNaturalLanguageName(), null, null));
-				}
-			}
-		}
+        if (name == null && node == null)
+        {
+            // Answer all the public rooms as items
+            for (MUCRoom room : rooms.values())
+            {
+                if (canDiscoverRoom(room))
+                {
+                    answer.add(new DiscoItem(room.getRole().getRoleAddress(),
+                            room.getNaturalLanguageName(), null, null));
+                }
+            }
+        }
         else if (name != null && node == null) {
             // Answer the room occupants as items if that info is publicly available
             MUCRoom room = getChatRoom(name);
             if (room != null && canDiscoverRoom(room)) {
                 for (MUCRole role : room.getOccupants()) {
                     // TODO Should we filter occupants that are invisible (presence is not broadcasted)?
-                	answer.add(new DiscoItem(role.getRoleAddress(), null, null, null));
+                    answer.add(new DiscoItem(role.getRoleAddress(), null, null, null));
                 }
             }
         }
@@ -1445,7 +1521,7 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
         }
         return buf.toString();
     }
-    
+
     public boolean isHidden() {
         return isHidden;
     }

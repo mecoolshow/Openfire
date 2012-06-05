@@ -48,7 +48,7 @@ import org.xmpp.packet.JID;
  * persistent. The first attempt will be to save the room in a relation database. If for some reason
  * the room can't be saved in the database an alternative repository will be used to save the room
  * such as XML files.<p>
- * 
+ *
  * After the problem with the database has been solved, the information saved in the XML files will
  * be moved to the database.
  *
@@ -56,82 +56,84 @@ import org.xmpp.packet.JID;
  */
 public class MUCPersistenceManager {
 
-	private static final Logger Log = LoggerFactory.getLogger(MUCPersistenceManager.class);
+    private static final Logger Log = LoggerFactory.getLogger(MUCPersistenceManager.class);
 
     private static final String GET_RESERVED_NAME =
-        "SELECT nickname FROM ofMucMember WHERE roomID=? AND jid=?";
+            "SELECT nickname FROM ofMucMember WHERE roomID=? AND jid=?";
     private static final String LOAD_ROOM =
-        "SELECT roomID, creationDate, modificationDate, naturalName, description, lockedDate, " +
-        "emptyDate, canChangeSubject, maxUsers, publicRoom, moderated, membersOnly, canInvite, " +
-        "roomPassword, canDiscoverJID, logEnabled, subject, rolesToBroadcast, useReservedNick, " +
-        "canChangeNick, canRegister FROM ofMucRoom WHERE serviceID=? AND name=?";
+            "SELECT roomID, creationDate, modificationDate, naturalName, description, lockedDate, " +
+                    "emptyDate, canChangeSubject, maxUsers, publicRoom, moderated, membersOnly, canInvite, " +
+                    "roomPassword, canDiscoverJID, logEnabled, subject, rolesToBroadcast, useReservedNick, " +
+                    "canChangeNick, canRegister FROM ofMucRoom WHERE serviceID=? AND name=?";
     private static final String LOAD_AFFILIATIONS =
-        "SELECT jid, affiliation FROM ofMucAffiliation WHERE roomID=?";
+            "SELECT jid, affiliation FROM ofMucAffiliation WHERE roomID=?";
     private static final String LOAD_MEMBERS =
-        "SELECT jid, nickname FROM ofMucMember WHERE roomID=?";
+            "SELECT jid, nickname FROM ofMucMember WHERE roomID=?";
     private static final String LOAD_HISTORY =
-        "SELECT sender, nickname, logTime, subject, body FROM ofMucConversationLog " +
-        "WHERE logTime>? AND roomID=? AND (nickname IS NOT NULL OR subject IS NOT NULL) ORDER BY logTime";
+            "SELECT sender, nickname, logTime, subject, body FROM ofMucConversationLog " +
+                    "WHERE logTime>? AND roomID=? AND (nickname IS NOT NULL OR subject IS NOT NULL) ORDER BY logTime";
     private static final String LOAD_ALL_ROOMS =
-        "SELECT roomID, creationDate, modificationDate, name, naturalName, description, " +
-        "lockedDate, emptyDate, canChangeSubject, maxUsers, publicRoom, moderated, membersOnly, " +
-        "canInvite, roomPassword, canDiscoverJID, logEnabled, subject, rolesToBroadcast, " +
-        "useReservedNick, canChangeNick, canRegister " +
-        "FROM ofMucRoom WHERE serviceID=? AND (emptyDate IS NULL or emptyDate > ?)";
+            "SELECT roomID, creationDate, modificationDate, name, naturalName, description, " +
+                    "lockedDate, emptyDate, canChangeSubject, maxUsers, publicRoom, moderated, membersOnly, " +
+                    "canInvite, roomPassword, canDiscoverJID, logEnabled, subject, rolesToBroadcast, " +
+                    "useReservedNick, canChangeNick, canRegister " +
+                    "FROM ofMucRoom WHERE serviceID=? AND (emptyDate IS NULL or emptyDate > ?)";
     private static final String LOAD_ALL_AFFILIATIONS =
-        "SELECT ofMucAffiliation.roomID,ofMucAffiliation.jid,ofMucAffiliation.affiliation " +
-        "FROM ofMucAffiliation,ofMucRoom WHERE ofMucAffiliation.roomID = ofMucRoom.roomID AND ofMucRoom.serviceID=?";
+            "SELECT ofMucAffiliation.roomID,ofMucAffiliation.jid,ofMucAffiliation.affiliation " +
+                    "FROM ofMucAffiliation,ofMucRoom WHERE ofMucAffiliation.roomID = ofMucRoom.roomID AND ofMucRoom.serviceID=?";
     private static final String LOAD_ALL_MEMBERS =
-        "SELECT ofMucMember.roomID,ofMucMember.jid,ofMucMember.nickname FROM ofMucMember,ofMucRoom " +
-        "WHERE ofMucMember.roomID = ofMucRoom.roomID AND ofMucRoom.serviceID=?";
+            "SELECT ofMucMember.roomID,ofMucMember.jid,ofMucMember.nickname FROM ofMucMember,ofMucRoom " +
+                    "WHERE ofMucMember.roomID = ofMucRoom.roomID AND ofMucRoom.serviceID=?";
+
     private static final String LOAD_ALL_HISTORY =
-        "SELECT ofMucConversationLog.roomID, ofMucConversationLog.sender, ofMucConversationLog.nickname, " +
-        "ofMucConversationLog.logTime, ofMucConversationLog.subject, ofMucConversationLog.body FROM " +
-        "ofMucConversationLog, ofMucRoom WHERE ofMucConversationLog.roomID = ofMucRoom.roomID AND " +
-        "ofMucRoom.serviceID=? AND ofMucConversationLog.logTime>? AND (ofMucConversationLog.nickname IS NOT NULL " +
-        "OR ofMucConversationLog.subject IS NOT NULL) ORDER BY ofMucConversationLog.logTime";
+            "SELECT ofMucConversationLog.roomID, ofMucConversationLog.sender, ofMucConversationLog.nickname, " +
+                    "ofMucConversationLog.logTime, ofMucConversationLog.subject, ofMucConversationLog.body FROM " +
+                    "ofMucConversationLog, ofMucRoom WHERE ofMucConversationLog.roomID = ofMucRoom.roomID AND " +
+                    "ofMucRoom.serviceID=? AND ofMucConversationLog.logTime>? AND (ofMucConversationLog.nickname IS NOT NULL " +
+                    "OR ofMucConversationLog.subject IS NOT NULL) ORDER BY ofMucConversationLog.logTime";
+
     private static final String UPDATE_ROOM =
-        "UPDATE ofMucRoom SET modificationDate=?, naturalName=?, description=?, " +
-        "canChangeSubject=?, maxUsers=?, publicRoom=?, moderated=?, membersOnly=?, " +
-        "canInvite=?, roomPassword=?, canDiscoverJID=?, logEnabled=?, rolesToBroadcast=?, " +
-        "useReservedNick=?, canChangeNick=?, canRegister=? WHERE roomID=?";
-    private static final String ADD_ROOM = 
-        "INSERT INTO ofMucRoom (serviceID, roomID, creationDate, modificationDate, name, naturalName, " +
-        "description, lockedDate, emptyDate, canChangeSubject, maxUsers, publicRoom, moderated, " +
-        "membersOnly, canInvite, roomPassword, canDiscoverJID, logEnabled, subject, " +
-        "rolesToBroadcast, useReservedNick, canChangeNick, canRegister) VALUES (?,?,?,?,?,?,?,?,?," +
-            "?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+            "UPDATE ofMucRoom SET modificationDate=?, naturalName=?, description=?, " +
+                    "canChangeSubject=?, maxUsers=?, publicRoom=?, moderated=?, membersOnly=?, " +
+                    "canInvite=?, roomPassword=?, canDiscoverJID=?, logEnabled=?, rolesToBroadcast=?, " +
+                    "useReservedNick=?, canChangeNick=?, canRegister=? WHERE roomID=?";
+    private static final String ADD_ROOM =
+            "INSERT INTO ofMucRoom (serviceID, roomID, creationDate, modificationDate, name, naturalName, " +
+                    "description, lockedDate, emptyDate, canChangeSubject, maxUsers, publicRoom, moderated, " +
+                    "membersOnly, canInvite, roomPassword, canDiscoverJID, logEnabled, subject, " +
+                    "rolesToBroadcast, useReservedNick, canChangeNick, canRegister) VALUES (?,?,?,?,?,?,?,?,?," +
+                    "?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     private static final String UPDATE_SUBJECT =
-        "UPDATE ofMucRoom SET subject=? WHERE roomID=?";
+            "UPDATE ofMucRoom SET subject=? WHERE roomID=?";
     private static final String UPDATE_LOCK =
-        "UPDATE ofMucRoom SET lockedDate=? WHERE roomID=?";
+            "UPDATE ofMucRoom SET lockedDate=? WHERE roomID=?";
     private static final String UPDATE_EMPTYDATE =
-        "UPDATE ofMucRoom SET emptyDate=? WHERE roomID=?";
+            "UPDATE ofMucRoom SET emptyDate=? WHERE roomID=?";
     private static final String DELETE_ROOM =
-        "DELETE FROM ofMucRoom WHERE roomID=?";
+            "DELETE FROM ofMucRoom WHERE roomID=?";
     private static final String DELETE_AFFILIATIONS =
-        "DELETE FROM ofMucAffiliation WHERE roomID=?";
+            "DELETE FROM ofMucAffiliation WHERE roomID=?";
     private static final String DELETE_MEMBERS =
-        "DELETE FROM ofMucMember WHERE roomID=?";
+            "DELETE FROM ofMucMember WHERE roomID=?";
     private static final String ADD_MEMBER =
-        "INSERT INTO ofMucMember (roomID,jid,nickname) VALUES (?,?,?)";
+            "INSERT INTO ofMucMember (roomID,jid,nickname) VALUES (?,?,?)";
     private static final String UPDATE_MEMBER =
-        "UPDATE ofMucMember SET nickname=? WHERE roomID=? AND jid=?";
+            "UPDATE ofMucMember SET nickname=? WHERE roomID=? AND jid=?";
     private static final String DELETE_MEMBER =
-        "DELETE FROM ofMucMember WHERE roomID=? AND jid=?";
+            "DELETE FROM ofMucMember WHERE roomID=? AND jid=?";
     private static final String ADD_AFFILIATION =
-        "INSERT INTO ofMucAffiliation (roomID,jid,affiliation) VALUES (?,?,?)";
+            "INSERT INTO ofMucAffiliation (roomID,jid,affiliation) VALUES (?,?,?)";
     private static final String UPDATE_AFFILIATION =
-        "UPDATE ofMucAffiliation SET affiliation=? WHERE roomID=? AND jid=?";
+            "UPDATE ofMucAffiliation SET affiliation=? WHERE roomID=? AND jid=?";
     private static final String DELETE_AFFILIATION =
-        "DELETE FROM ofMucAffiliation WHERE roomID=? AND jid=?";
+            "DELETE FROM ofMucAffiliation WHERE roomID=? AND jid=?";
     private static final String DELETE_USER_MEMBER =
-        "DELETE FROM ofMucMember WHERE jid=?";
+            "DELETE FROM ofMucMember WHERE jid=?";
     private static final String DELETE_USER_MUCAFFILIATION =
-        "DELETE FROM ofMucAffiliation WHERE jid=?";
+            "DELETE FROM ofMucAffiliation WHERE jid=?";
     private static final String ADD_CONVERSATION_LOG =
-        "INSERT INTO ofMucConversationLog (roomID,sender,nickname,logTime,subject,body) " +
-        "VALUES (?,?,?,?,?,?)";
+            "INSERT INTO ofMucConversationLog (roomID,sender,nickname,logTime,subject,body) " +
+                    "VALUES (?,?,?,?,?,?)";
 
     /* Map of subdomains to their associated properties */
     private static ConcurrentHashMap<String,MUCServiceProperties> propertyMaps = new ConcurrentHashMap<String,MUCServiceProperties>();
@@ -169,7 +171,7 @@ public class MUCPersistenceManager {
 
     /**
      * Loads the room configuration from the database if the room was persistent.
-     * 
+     *
      * @param room the room to load from the database if persistent
      */
     public static void loadFromDB(LocalMUCRoom room) {
@@ -282,7 +284,7 @@ public class MUCPersistenceManager {
                 }
             }
             DbConnectionManager.fastcloseStmt(rs, pstmt);
-            
+
             pstmt = con.prepareStatement(LOAD_MEMBERS);
             pstmt.setLong(1, room.getID());
             rs = pstmt.executeQuery();
@@ -315,7 +317,7 @@ public class MUCPersistenceManager {
 
     /**
      * Save the room configuration to the DB.
-     * 
+     *
      * @param room The room to save its configuration.
      */
     public static void saveToDB(LocalMUCRoom room) {
@@ -388,7 +390,7 @@ public class MUCPersistenceManager {
 
     /**
      * Removes the room configuration and its affiliates from the database.
-     * 
+     *
      * @param room the room to remove from the database.
      */
     public static void deleteFromDB(MUCRoom room) {
@@ -437,12 +439,13 @@ public class MUCPersistenceManager {
      * @return a collection with all the persistent rooms.
      */
     public static Collection<LocalMUCRoom> loadRoomsFromDB(MultiUserChatService chatserver,
-            Date emptyDate, PacketRouter packetRouter) {
+                                                           Date emptyDate, PacketRouter packetRouter) {
         Connection con = null;
         PreparedStatement pstmt = null;
         ResultSet rs = null;
         Map<Long, LocalMUCRoom> rooms = new HashMap<Long, LocalMUCRoom>();
         try {
+            Log.warn("Loading rooms");
             Long serviceID = XMPPServer.getInstance().getMultiUserChatManager().getMultiUserChatServiceID(chatserver.getServiceName());
             con = DbConnectionManager.getConnection();
             pstmt = con.prepareStatement(LOAD_ALL_ROOMS);
@@ -473,6 +476,7 @@ public class MUCPersistenceManager {
                 room.setCanAnyoneDiscoverJID(rs.getInt(16) == 1);
                 room.setLogEnabled(rs.getInt(17) == 1);
                 room.setSubject(rs.getString(18));
+
                 List<String> rolesToBroadcast = new ArrayList<String>();
                 String roles = Integer.toBinaryString(rs.getInt(19));
                 if (roles.charAt(0) == '1') {
@@ -489,19 +493,24 @@ public class MUCPersistenceManager {
                 room.setChangeNickname(rs.getInt(21) == 1);
                 room.setRegistrationEnabled(rs.getInt(22) == 1);
                 room.setPersistent(true);
+
                 rooms.put(room.getID(), room);
             }
             DbConnectionManager.fastcloseStmt(rs, pstmt);
-
+            Log.warn("Loading History");
             pstmt = con.prepareStatement(LOAD_ALL_HISTORY);
+
             // Recreate the history until two days ago
             long from = System.currentTimeMillis() - (86400000 * 2);
             pstmt.setLong(1, serviceID);
             pstmt.setString(2, StringUtils.dateToMillis(new Date(from)));
+
             // Load the rooms conversations from the last two days
             rs = pstmt.executeQuery();
+
             while (rs.next()) {
                 LocalMUCRoom room = rooms.get(rs.getLong(1));
+
                 // Skip to the next position if the room does not exist
                 if (room == null) {
                     continue;
@@ -536,7 +545,7 @@ public class MUCPersistenceManager {
                             loadedRoom.getModificationDate(), loadedRoom.getSubject(), null);
                 }
             }
-
+            Log.warn("Loading affiliations");
             pstmt = con.prepareStatement(LOAD_ALL_AFFILIATIONS);
             pstmt.setLong(1, serviceID);
             rs = pstmt.executeQuery();
@@ -547,28 +556,28 @@ public class MUCPersistenceManager {
                 if (room == null) {
                     continue;
                 }
-                
+
                 final MUCRole.Affiliation affiliation = MUCRole.Affiliation.valueOf(rs.getInt(3));
 
-				final String jidValue = rs.getString(2);
-				final JID jid;
-				try {
-					jid = new JID(jidValue);
-				} catch (IllegalArgumentException ex) {
-					Log.warn("An illegal JID ({}) was found in the database, "
-							+ "while trying to load all affiliations for room "
-							+ "{} on the MUC service {}. An attempt is made to"
-							+ " delete the associated affiliation. The JID is"
-							+ "  otherwise ignored.", new Object[] { jidValue,
-							roomID, chatserver.getName() });
-					try {
-						removeAffiliationFromDB(room, jidValue, affiliation);
-						Log.warn("Affiliation removed.");
-					} catch (RuntimeException e) {
-						Log.warn("Unable to remove affiliation.", e);
-					}
-					continue;
-				}
+                final String jidValue = rs.getString(2);
+                final JID jid;
+                try {
+                    jid = new JID(jidValue);
+                } catch (IllegalArgumentException ex) {
+                    Log.warn("An illegal JID ({}) was found in the database, "
+                            + "while trying to load all affiliations for room "
+                            + "{} on the MUC service {}. An attempt is made to"
+                            + " delete the associated affiliation. The JID is"
+                            + "  otherwise ignored.", new Object[] { jidValue,
+                            roomID, chatserver.getName() });
+                    try {
+                        removeAffiliationFromDB(room, jidValue, affiliation);
+                        Log.warn("Affiliation removed.");
+                    } catch (RuntimeException e) {
+                        Log.warn("Unable to remove affiliation.", e);
+                    }
+                    continue;
+                }
                 try {
                     switch (affiliation) {
                         case owner:
@@ -590,7 +599,7 @@ public class MUCPersistenceManager {
                 }
             }
             DbConnectionManager.fastcloseStmt(rs, pstmt);
-
+            Log.warn("Loading members");
             pstmt = con.prepareStatement(LOAD_ALL_MEMBERS);
             pstmt.setLong(1, serviceID);
             rs = pstmt.executeQuery();
@@ -607,6 +616,7 @@ public class MUCPersistenceManager {
                     Log.error(e.getMessage(), e);
                 }
             }
+            Log.warn("All done");
         }
         catch (SQLException sqle) {
             Log.error(sqle.getMessage(), sqle);
@@ -632,7 +642,7 @@ public class MUCPersistenceManager {
 
     /**
      * Updates the room's subject in the database. 
-     * 
+     *
      * @param room the room to update its subject in the database.
      */
     public static void updateRoomSubject(MUCRoom room) {
@@ -720,7 +730,7 @@ public class MUCPersistenceManager {
     /**
      * Update the DB with the new affiliation of the user in the room. The new information will be
      * saved only if the room is_persistent and has already been saved to the database previously.
-     * 
+     *
      * @param room The room where the affiliation of the user was updated.
      * @param bareJID The bareJID of the user to update this affiliation.
      * @param nickname The reserved nickname of the user in the room or null if none.
@@ -728,7 +738,7 @@ public class MUCPersistenceManager {
      * @param oldAffiliation the previous affiliation of the user in the room.
      */
     public static void saveAffiliationToDB(MUCRoom room, String bareJID, String nickname,
-            MUCRole.Affiliation newAffiliation, MUCRole.Affiliation oldAffiliation)
+                                           MUCRole.Affiliation newAffiliation, MUCRole.Affiliation oldAffiliation)
     {
         if (!room.isPersistent() || !room.wasSavedToDB()) {
             return;
@@ -875,13 +885,13 @@ public class MUCPersistenceManager {
 
     /**
      * Removes the affiliation of the user from the DB if the room is persistent.
-     * 
+     *
      * @param room The room where the affiliation of the user was removed.
      * @param bareJID The bareJID of the user to remove his affiliation.
      * @param oldAffiliation the previous affiliation of the user in the room.
      */
     public static void removeAffiliationFromDB(MUCRoom room, String bareJID,
-            MUCRole.Affiliation oldAffiliation)
+                                               MUCRole.Affiliation oldAffiliation)
     {
         if (room.isPersistent() && room.wasSavedToDB()) {
             if (MUCRole.Affiliation.member == oldAffiliation) {
@@ -953,9 +963,45 @@ public class MUCPersistenceManager {
         }
     }
 
+    public static boolean saveConversationLogEntries(Collection<ConversationLogEntry> entries) {
+        Connection con = null;
+        PreparedStatement pstmt = null;
+        try {
+            con = DbConnectionManager.getConnection();
+            con.setAutoCommit(false);
+            pstmt = con.prepareStatement(ADD_CONVERSATION_LOG);
+
+            for(ConversationLogEntry entry : entries)
+            {
+                pstmt.setLong(1, entry.getRoomID());
+                pstmt.setString(2, entry.getSender().toString());
+                pstmt.setString(3, entry.getNickname());
+                pstmt.setString(4, StringUtils.dateToMillis(entry.getDate()));
+                pstmt.setString(5, entry.getSubject());
+                pstmt.setString(6, entry.getBody());
+                pstmt.addBatch();
+            }
+
+            if (DbConnectionManager.isBatchUpdatesSupported()) {
+                pstmt.executeBatch();
+            }
+            con.commit();
+
+            return true;
+        }
+        catch (SQLException sqle) {
+            Log.error("Error saving conversation log entry", sqle);
+            return false;
+        }
+        finally {
+            DbConnectionManager.closeConnection(pstmt, con);
+        }
+    }
+
+
     /**
      * Saves the conversation log entry to the database.
-     * 
+     *
      * @param entry the ConversationLogEntry to save to the database.
      * @return true if the ConversationLogEntry was saved successfully to the database.
      */
@@ -985,7 +1031,7 @@ public class MUCPersistenceManager {
 
     /**
      * Returns an integer based on the binary representation of the roles to broadcast.
-     * 
+     *
      * @param room the room to marshall its roles to broadcast.
      * @return an integer based on the binary representation of the roles to broadcast.
      */
@@ -1209,11 +1255,11 @@ public class MUCPersistenceManager {
         propertyMaps.put(subdomain, properties);
     }
 
-   /**
+    /**
      * Sets multiple Jive properties at once. If a property doesn't already exists, a new
      * one will be created.
      *
-    * @param subdomain the subdomain of the service to set properties for
+     * @param subdomain the subdomain of the service to set properties for
      * @param propertyMap a map of properties, keyed on property name.
      */
     public static void setProperties(String subdomain, Map<String, String> propertyMap) {
@@ -1258,5 +1304,5 @@ public class MUCPersistenceManager {
     public static void refreshProperties(String subdomain) {
         propertyMaps.replace(subdomain, new MUCServiceProperties(subdomain));
     }
-    
+
 }
