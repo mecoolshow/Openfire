@@ -488,9 +488,15 @@ public class SASLAuthentication {
 
         Log.debug("SASLAuthentication: BBB authentication.");
 
-        System.out.println("SASLAuthentication: BBB authentication.");
         String username = new String(StringUtils.decodeBase64(doc.getTextTrim()), CHARSET);
-        authenticationSuccessful(session, username,  null);
+
+        String u = AuthorizationManager.map(username);
+        Log.debug("{} {} authorized", u, username);
+        if(u == username)
+            return Status.failed;
+
+        authenticationSuccessful(session, u,  null);
+
         return Status.authenticated;
     }
 
@@ -588,9 +594,12 @@ public class SASLAuthentication {
                 Log.debug("SASLAuthentication: no username requested, using "+username);
             }
 
+            String squirrel = AuthorizationManager.map(principal);
+
             //Its possible that either/both username and principal are null here
             //The providers should not allow a null authorization
-            if (AuthorizationManager.authorize(username,principal)) {
+            if (AuthorizationManager.authorize(/*username*/ squirrel, squirrel)) {
+
                 Log.debug("SASLAuthentication: "+principal+" authorized to "+username);
                 authenticationSuccessful(session, username,  null);
                 return Status.authenticated;
@@ -645,12 +654,16 @@ public class SASLAuthentication {
 
     private static void authenticationSuccessful(LocalSession session, String username,
             byte[] successData) {
+
         if (username != null && LockOutManager.getInstance().isAccountDisabled(username)) {
             // Interception!  This person is locked out, fail instead!
             LockOutManager.getInstance().recordFailedLogin(username);
             authenticationFailed(session);
             return;
         }
+
+        Log.debug("Stuck here?");
+
         StringBuilder reply = new StringBuilder(80);
         reply.append("<success xmlns=\"urn:ietf:params:xml:ns:xmpp-sasl\"");
         if (successData != null) {
@@ -661,10 +674,13 @@ public class SASLAuthentication {
             reply.append("/>");
         }
         session.deliverRawText(reply.toString());
+        Log.debug("Squirrel");
         // We only support SASL for c2s
         if (session instanceof ClientSession) {
             ((LocalClientSession) session).setAuthToken(new AuthToken(username));
+            Log.debug("Squirrel2");
         }
+
         else if (session instanceof IncomingServerSession) {
             String hostname = username;
             // Add the validated domain as a valid domain. The remote server can

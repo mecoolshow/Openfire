@@ -61,7 +61,7 @@ import org.slf4j.LoggerFactory;
  */
 public class LdapAuthorizationMapping implements AuthorizationMapping {
 
-	private static final Logger Log = LoggerFactory.getLogger(LdapAuthorizationMapping.class);
+	private final Logger Log = LoggerFactory.getLogger(LdapAuthorizationMapping.class);
 
     private LdapManager manager;
     private String usernameField;
@@ -73,10 +73,15 @@ public class LdapAuthorizationMapping implements AuthorizationMapping {
         JiveGlobals.migrateProperty("ldap.princField");
         JiveGlobals.migrateProperty("ldap.princSearchFilter");
 
+
+
         manager = LdapManager.getInstance();
         usernameField = manager.getUsernameField();
-        princField = JiveGlobals.getProperty("ldap.princField", "k5login");
+
+        princField = JiveGlobals.getProperty("ldap.princField", "displayName");
+
         princSearchFilter = JiveGlobals.getProperty("ldap.princSearchFilter");
+
         StringBuilder filter = new StringBuilder();
         if(princSearchFilter == null) {
             filter.append("(").append(princField).append("={0})");
@@ -92,23 +97,26 @@ public class LdapAuthorizationMapping implements AuthorizationMapping {
         DirContext ctx = null;
         try {
             Log.debug("LdapAuthorizationMapping: Starting LDAP search...");
+
             String usernameField = manager.getUsernameField();
-            //String baseDN = manager.getBaseDN();
+
+            String baseDN = manager.getBaseDN();
             boolean subTreeSearch = manager.isSubTreeSearch();
-            ctx = manager.getContext();
+            ctx = manager.getContext(baseDN);
             SearchControls constraints = new SearchControls();
             if (subTreeSearch) {
-                constraints.setSearchScope
-            (SearchControls.SUBTREE_SCOPE);
+                constraints.setSearchScope(SearchControls.SUBTREE_SCOPE);
             }
             // Otherwise, only search a single level.
             else {
                 constraints.setSearchScope(SearchControls.ONELEVEL_SCOPE);
             }
+
             constraints.setReturningAttributes(new String[] { usernameField });
 
             NamingEnumeration answer = ctx.search("", princSearchFilter, new String[] {principal},
                     constraints);
+            Log.debug("{} ", baseDN);
             Log.debug("LdapAuthorizationMapping: ... search finished");
             if (answer == null || !answer.hasMoreElements()) {
                 Log.debug("LdapAuthorizationMapping: Username based on principal '" + principal + "' not found.");
@@ -117,6 +125,7 @@ public class LdapAuthorizationMapping implements AuthorizationMapping {
             Attributes atrs = ((SearchResult)answer.next()).getAttributes();
             Attribute usernameAttribute = atrs.get(usernameField);
             username = (String) usernameAttribute.get();
+            Log.debug("Found it {}", username);
         }
         catch (Exception e) {
             // Ignore.
