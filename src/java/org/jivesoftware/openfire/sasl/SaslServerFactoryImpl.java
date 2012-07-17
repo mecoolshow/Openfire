@@ -26,7 +26,7 @@ import javax.security.sasl.SaslServerFactory;
 import javax.security.sasl.SaslServer;
 import javax.security.sasl.SaslException;
 import com.sun.security.sasl.util.PolicyUtils;
-import org.jivesoftware.openfire.clearspace.ClearspaceSaslServer;
+
 
 /**
  * Server Factory for supported mechanisms.
@@ -36,10 +36,10 @@ import org.jivesoftware.openfire.clearspace.ClearspaceSaslServer;
 
 public class SaslServerFactoryImpl implements SaslServerFactory {
 
-    private static final String myMechs[] = { "PLAIN", "CLEARSPACE" };
+    private static final String myMechs[] = { "PLAIN" };
     private static final int mechPolicies[] = { PolicyUtils.NOANONYMOUS, PolicyUtils.NOANONYMOUS };
     private static final int PLAIN = 0;
-    private static final int CLEARSPACE = 1;
+
 
     public SaslServerFactoryImpl() {
     }
@@ -63,12 +63,7 @@ public class SaslServerFactoryImpl implements SaslServerFactory {
             }
             return new SaslServerPlainImpl(protocol, serverName, props, cbh);
         }
-        else if (mechanism.equals(myMechs[CLEARSPACE]) && PolicyUtils.checkPolicy(mechPolicies[CLEARSPACE], props)) {
-            if (cbh == null) {
-                throw new SaslException("CallbackHandler with support for AuthorizeCallback required");
-            }
-            return new ClearspaceSaslServer();
-        }
+
         return null;
     }
 
