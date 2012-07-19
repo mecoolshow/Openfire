@@ -1,3 +1,6 @@
+package org.jivesoftware.openfire.netty;
+
+
 /**
  * $Revision: $
  * $Date: $
@@ -17,9 +20,15 @@
  * limitations under the License.
  */
 
-package org.jivesoftware.openfire.nio;
+
+import org.jivesoftware.util.JiveGlobals;
+import org.jivesoftware.util.PropertyEventDispatcher;
+import org.jivesoftware.util.PropertyEventListener;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.CharBuffer;
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CoderResult;
@@ -28,12 +37,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.mina.common.ByteBuffer;
-import org.jivesoftware.util.JiveGlobals;
-import org.jivesoftware.util.PropertyEventDispatcher;
-import org.jivesoftware.util.PropertyEventListener;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
 
 /**
  * This is a Light-Weight XML Parser.
@@ -46,9 +50,9 @@ import org.slf4j.LoggerFactory;
  * @author Daniele Piras
  * @author Gaston Dombiak
  */
-public class XMLLightweightParser {
-	
-	private static final Logger Log = LoggerFactory.getLogger(XMLLightweightParser.class);
+class XMLLightweightParser {
+
+    private static final Logger Log = LoggerFactory.getLogger(XMLLightweightParser.class);
 
     private static final String MAX_PROPERTY_NAME = "xmpp.parser.buffer.size";
     private static int maxBufferSize;
@@ -79,7 +83,7 @@ public class XMLLightweightParser {
     protected static final int INSIDE_CDATA = 8;
     // Status used when you are outside a tag/reading text
     protected static final int OUTSIDE = 9;
-    
+
     final String[] sstatus = {"INIT", "", "HEAD", "INSIDE", "PRETAIL", "TAIL", "VERIFY", "INSIDE_PARAM", "INSIDE_CDATA", "OUTSIDE"};
 
 
@@ -115,8 +119,8 @@ public class XMLLightweightParser {
 
     public XMLLightweightParser(String charset) {
         encoder = Charset.forName(charset).newDecoder()
-			.onMalformedInput(CodingErrorAction.REPLACE)
-			.onUnmappableCharacter(CodingErrorAction.REPLACE);
+                .onMalformedInput(CodingErrorAction.REPLACE)
+                .onUnmappableCharacter(CodingErrorAction.REPLACE);
     }
 
     /*
@@ -177,13 +181,13 @@ public class XMLLightweightParser {
     public void read(ByteBuffer byteBuffer) throws Exception {
         invalidateBuffer();
         // Check that the buffer is not bigger than 1 Megabyte. For security reasons
-        // we will abort parsing when 1 Mega of queued chars was found.
+        // we will abort parsing when 1 MB of queued chars was found.
         if (buffer.length() > maxBufferSize) {
             throw new Exception("Stopped parsing never ending stanza");
         }
         CharBuffer charBuffer = CharBuffer.allocate(byteBuffer.capacity());
         encoder.reset();
-        CoderResult coderResult = encoder.decode(byteBuffer.buf(), charBuffer, false);
+        CoderResult coderResult = encoder.decode(byteBuffer, charBuffer, false);
         char[] buf = new char[charBuffer.position()];
         charBuffer.flip();charBuffer.get(buf);
         int readChar = buf.length;
@@ -201,8 +205,8 @@ public class XMLLightweightParser {
         for (int i = 0; i < readChar; i++) {
             ch = buf[i];
             if (ch < 0x20 && ch != 0x9 && ch != 0xA && ch != 0xD && ch != 0x0) {
-                 //Unicode characters in the range 0x0000-0x001F other than 9, A, and D are not allowed in XML
-                 //We need to allow the NULL character, however, for Flash XMLSocket clients to work.
+                //Unicode characters in the range 0x0000-0x001F other than 9, A, and D are not allowed in XML
+                //We need to allow the NULL character, however, for Flash XMLSocket clients to work.
                 throw new Exception("Disallowed character");
             }
             if (isHighSurrogate) {
@@ -273,7 +277,7 @@ public class XMLLightweightParser {
                         // Add message to the list
                         foundMsg(msg);
                         startLastMsg = end;
-                    } 
+                    }
                 } else if (ch == '<') {
                     status = XMLLightweightParser.PRETAIL;
                     insideChildrenTag = true;
@@ -312,7 +316,7 @@ public class XMLLightweightParser {
                 } else if (ch == '>') {
                     status = XMLLightweightParser.OUTSIDE;
                     if (insideRootTag && ("stream:stream>".equals(head.toString()) ||
-                            ("?xml>".equals(head.toString())) || ("flash:stream>".equals(head.toString())))) {
+                            ("?xml>".equals(head.toString())))) {
                         // Found closing stream:stream
                         int end = buffer.length() - readChar + (i + 1);
                         // Skip LF, CR and other "weird" characters that could appear
@@ -362,7 +366,7 @@ public class XMLLightweightParser {
             }
         }
         if (head.length() > 0 &&
-                ("/stream:stream>".equals(head.toString()) || ("/flash:stream>".equals(head.toString())))) {
+                ("/stream:stream>".equals(head.toString()))) {
             // Found closing stream:stream
             foundMsg("</stream:stream>");
         }

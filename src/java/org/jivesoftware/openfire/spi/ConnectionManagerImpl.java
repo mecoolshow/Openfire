@@ -31,11 +31,7 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import java.util.concurrent.Executor;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.net.ssl.KeyManagerFactory;
@@ -52,6 +48,17 @@ import org.apache.mina.filter.executor.ExecutorFilter;
 import org.apache.mina.transport.socket.nio.SocketAcceptor;
 import org.apache.mina.transport.socket.nio.SocketAcceptorConfig;
 import org.apache.mina.transport.socket.nio.SocketSessionConfig;
+
+import org.jboss.netty.bootstrap.ServerBootstrap;
+import org.jboss.netty.channel.*;
+import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
+import org.jboss.netty.handler.codec.string.StringEncoder;
+import org.jboss.netty.handler.execution.ExecutionHandler;
+import org.jboss.netty.handler.execution.OrderedMemoryAwareThreadPoolExecutor;
+import org.jboss.netty.handler.timeout.IdleStateHandler;
+
+import org.jivesoftware.openfire.netty.XMLFrameDecoder;
+
 import org.jivesoftware.openfire.ConnectionManager;
 import org.jivesoftware.openfire.PacketDeliverer;
 import org.jivesoftware.openfire.PacketRouter;
@@ -81,9 +88,10 @@ import org.jivesoftware.util.LocaleUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+
 public class ConnectionManagerImpl extends BasicModule implements ConnectionManager, CertificateEventListener {
 
-	private static final Logger Log = LoggerFactory.getLogger(ConnectionManagerImpl.class);
+    private static final Logger Log = LoggerFactory.getLogger(ConnectionManagerImpl.class);
 
     private SocketAcceptor socketAcceptor;
     private SocketAcceptor sslSocketAcceptor;
@@ -91,6 +99,13 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
     private SocketAcceptThread serverSocketThread;
     private SocketAcceptor multiplexerSocketAcceptor;
     private ArrayList<ServerPort> ports;
+
+    /*Netty*/
+
+    private ServerBootstrap bootstrap;
+    private ExecutionHandler executionHandler;
+
+    /*Netty*/
 
     private SessionManager sessionManager;
     private PacketDeliverer deliverer;
@@ -148,8 +163,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
         // Setup port info
         try {
             localIPAddress = InetAddress.getLocalHost().getHostAddress();
-        }
-        catch (UnknownHostException e) {
+        } catch (UnknownHostException e) {
             if (localIPAddress == null) {
                 localIPAddress = "Unknown";
             }
@@ -178,8 +192,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
                 ports.add(serverSocketThread.getServerPort());
                 serverSocketThread.setDaemon(true);
                 serverSocketThread.setPriority(Thread.MAX_PRIORITY);
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                 System.err.println("Error creating server listener on port " + port + ": " +
                         e.getMessage());
                 Log.error(LocaleUtils.getLocalizedString("admin.error.socket-setup"), e);
@@ -197,8 +210,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
                 List<String> params = new ArrayList<String>();
                 params.add(Integer.toString(serverSocketThread.getPort()));
                 Log.info(LocaleUtils.getLocalizedString("startup.server", params));
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                 System.err.println("Error starting server listener on port " + port + ": " +
                         e.getMessage());
                 Log.error(LocaleUtils.getLocalizedString("admin.error.socket-setup"), e);
@@ -233,6 +245,75 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
         }
     }
 
+
+    private void temp() {
+        if (isConnectionManagerListenerEnabled()) {
+            int port = getConnectionManagerListenerPort();
+
+            try {
+                // Listen on a specific network interface if it has been set.
+                String interfaceName = JiveGlobals.getXMLProperty("network.interface");
+                InetAddress bindInterface = null;
+                if (interfaceName != null) {
+                    if (interfaceName.trim().length() > 0) {
+                        bindInterface = InetAddress.getByName(interfaceName);
+                    }
+                }
+
+                executionHandler = new ExecutionHandler(new OrderedMemoryAwareThreadPoolExecutor(80, 0, 0));
+
+                bootstrap = new ServerBootstrap(
+                        new NioServerSocketChannelFactory(
+                                Executors.newCachedThreadPool(),
+                                Executors.newCachedThreadPool()));
+
+                bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
+                    @Override
+                    public ChannelPipeline getPipeline() throws Exception {
+                        final ChannelPipeline pipeline = Channels.pipeline();
+
+                        pipeline.addLast("decoder", new XMLFrameDecoder());
+                        pipeline.addLast("encoder", new StringEncoder());
+                        pipeline.addLast("executor", executionHandler);
+
+                        //pipeline.addLast("handler", new ClientConnectionHandler());
+
+                        return pipeline;
+                    }
+                });
+
+                bootstrap.setOption("child.sendBufferSize", 1048576);
+                bootstrap.setOption("child.receiveBufferSize", 1048576);
+                bootstrap.setOption("receiveBufferSizePredictorFactory", new AdaptiveReceiveBufferSizePredictorFactory());
+                bootstrap.setOption("writeBufferLowWaterMark", 32 * 1024);
+                bootstrap.setOption("writeBufferHighWaterMark", 64 * 1024);
+                bootstrap.setOption("child.tcpNoDelay", true);
+
+
+                try {
+                    bootstrap.bind(new InetSocketAddress(bindInterface, port));
+                    Log.info("Listening on port {}", port);
+
+                } catch (ChannelException ex) {
+                    Log.error("Could not bind on port " + port, ex);
+                    System.exit(0);
+                }
+
+
+                ports.add(new ServerPort(port, serverName, localIPAddress, false, null, ServerPort.Type.connectionManager));
+
+                List<String> params = new ArrayList<String>();
+                params.add(Integer.toString(port));
+                Log.info(LocaleUtils.getLocalizedString("startup.multiplexer", params));
+            } catch (Exception e) {
+                System.err.println("Error starting multiplexer listener on port " + port + ": " +
+                        e.getMessage());
+                Log.error(LocaleUtils.getLocalizedString("admin.error.socket-setup"), e);
+            }
+
+        }
+    }
+
     private void startConnectionManagerListener(String localIPAddress) {
         // Start multiplexers socket unless it's been disabled.
         if (isConnectionManagerListenerEnabled()) {
@@ -250,13 +331,13 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
                 // Start accepting connections
                 multiplexerSocketAcceptor.bind(new InetSocketAddress(bindInterface, port), new MultiplexerConnectionHandler(serverName));
 
+
                 ports.add(new ServerPort(port, serverName, localIPAddress, false, null, ServerPort.Type.connectionManager));
 
                 List<String> params = new ArrayList<String>();
                 params.add(Integer.toString(port));
                 Log.info(LocaleUtils.getLocalizedString("startup.multiplexer", params));
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                 System.err.println("Error starting multiplexer listener on port " + port + ": " +
                         e.getMessage());
                 Log.error(LocaleUtils.getLocalizedString("admin.error.socket-setup"), e);
@@ -285,7 +366,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
             // Customize Executor that will be used by processors to process incoming stanzas
             ExecutorThreadModel threadModel = ExecutorThreadModel.getInstance("component");
             int eventThreads = JiveGlobals.getIntProperty("xmpp.component.processing.threads", 16);
-            ThreadPoolExecutor eventExecutor = (ThreadPoolExecutor)threadModel.getExecutor();
+            ThreadPoolExecutor eventExecutor = (ThreadPoolExecutor) threadModel.getExecutor();
             eventExecutor.setCorePoolSize(eventThreads + 1);
             eventExecutor.setMaximumPoolSize(eventThreads + 1);
             eventExecutor.setKeepAliveTime(60, TimeUnit.SECONDS);
@@ -319,8 +400,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
                 List<String> params = new ArrayList<String>();
                 params.add(Integer.toString(port));
                 Log.info(LocaleUtils.getLocalizedString("startup.component", params));
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                 System.err.println("Error starting component listener on port " + port + ": " +
                         e.getMessage());
                 Log.error(LocaleUtils.getLocalizedString("admin.error.socket-setup"), e);
@@ -349,7 +429,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
             // Customize Executor that will be used by processors to process incoming stanzas
             ExecutorThreadModel threadModel = ExecutorThreadModel.getInstance("client");
             int eventThreads = JiveGlobals.getIntProperty("xmpp.client.processing.threads", 16);
-            ThreadPoolExecutor eventExecutor = (ThreadPoolExecutor)threadModel.getExecutor();
+            ThreadPoolExecutor eventExecutor = (ThreadPoolExecutor) threadModel.getExecutor();
             eventExecutor.setCorePoolSize(eventThreads + 1);
             eventExecutor.setMaximumPoolSize(eventThreads + 1);
             eventExecutor.setKeepAliveTime(60, TimeUnit.SECONDS);
@@ -384,8 +464,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
                 List<String> params = new ArrayList<String>();
                 params.add(Integer.toString(port));
                 Log.info(LocaleUtils.getLocalizedString("startup.plain", params));
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                 System.err.println("Error starting XMPP listener on port " + port + ": " +
                         e.getMessage());
                 Log.error(LocaleUtils.getLocalizedString("admin.error.socket-setup"), e);
@@ -420,21 +499,19 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
                 // Customize Executor that will be used by processors to process incoming stanzas
                 int eventThreads = JiveGlobals.getIntProperty("xmpp.client_ssl.processing.threads", 16);
                 ExecutorFilter executorFilter = new ExecutorFilter();
-                ThreadPoolExecutor eventExecutor = (ThreadPoolExecutor)executorFilter.getExecutor();
+                ThreadPoolExecutor eventExecutor = (ThreadPoolExecutor) executorFilter.getExecutor();
                 final ThreadFactory originalThreadFactory = eventExecutor.getThreadFactory();
-                ThreadFactory newThreadFactory = new ThreadFactory()
-                {
-                    private final AtomicInteger threadId = new AtomicInteger( 0 );
+                ThreadFactory newThreadFactory = new ThreadFactory() {
+                    private final AtomicInteger threadId = new AtomicInteger(0);
 
-                    public Thread newThread( Runnable runnable )
-                    {
-                        Thread t = originalThreadFactory.newThread( runnable );
-                        t.setName("Old SSL executor thread - " + threadId.incrementAndGet() );
-                        t.setDaemon( true );
+                    public Thread newThread(Runnable runnable) {
+                        Thread t = originalThreadFactory.newThread(runnable);
+                        t.setName("Old SSL executor thread - " + threadId.incrementAndGet());
+                        t.setDaemon(true);
                         return t;
                     }
                 };
-                eventExecutor.setThreadFactory( newThreadFactory );
+                eventExecutor.setThreadFactory(newThreadFactory);
                 eventExecutor.setCorePoolSize(eventThreads + 1);
                 eventExecutor.setMaximumPoolSize(eventThreads + 1);
                 eventExecutor.setKeepAliveTime(60, TimeUnit.SECONDS);
@@ -458,16 +535,14 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
                         new java.security.SecureRandom());
 
                 SSLFilter sslFilter = new SSLFilter(sslContext);
-                if (JiveGlobals.getProperty("xmpp.client.cert.policy","disabled").equals("needed")) {
+                if (JiveGlobals.getProperty("xmpp.client.cert.policy", "disabled").equals("needed")) {
                     sslFilter.setNeedClientAuth(true);
-                }
-                else if(JiveGlobals.getProperty("xmpp.client.cert.policy","disabled").equals("wanted")) {
+                } else if (JiveGlobals.getProperty("xmpp.client.cert.policy", "disabled").equals("wanted")) {
                     sslFilter.setWantClientAuth(true);
                 }
                 sslSocketAcceptor.getFilterChain().addFirst("tls", sslFilter);
 
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                 System.err.println("Error starting SSL XMPP listener on port " + port + ": " +
                         e.getMessage());
                 Log.error(LocaleUtils.getLocalizedString("admin.error.ssl"), e);
@@ -497,8 +572,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
                 List<String> params = new ArrayList<String>();
                 params.add(Integer.toString(port));
                 Log.info(LocaleUtils.getLocalizedString("startup.ssl", params));
-            }
-            catch (Exception e) {
+            } catch (Exception e) {
                 System.err.println("Error starting SSL XMPP listener on port " + port + ": " +
                         e.getMessage());
                 Log.error(LocaleUtils.getLocalizedString("admin.error.ssl"), e);
@@ -526,8 +600,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
         // Setup port info
         try {
             localIPAddress = InetAddress.getLocalHost().getHostAddress();
-        }
-        catch (UnknownHostException e) {
+        } catch (UnknownHostException e) {
             if (localIPAddress == null) {
                 localIPAddress = "Unknown";
             }
@@ -542,7 +615,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
     }
 
     public SocketReader createSocketReader(Socket sock, boolean isSecure, ServerPort serverPort,
-            boolean useBlockingMode) throws IOException {
+                                           boolean useBlockingMode) throws IOException {
         if (serverPort.isServerPort()) {
             SocketConnection conn = new SocketConnection(deliverer, sock, isSecure);
             return new ServerSocketReader(router, routingTable, serverName, sock, conn,
@@ -556,7 +629,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
     }
 
     @Override
-	public void initialize(XMPPServer server) {
+    public void initialize(XMPPServer server) {
         super.initialize(server);
         this.server = server;
         serverName = server.getServerInfo().getXMPPDomain();
@@ -582,8 +655,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
             // Start the port listener for clients
             createClientListeners();
             startClientListeners(localIPAddress);
-        }
-        else {
+        } else {
             JiveGlobals.setProperty("xmpp.socket.plain.active", "false");
             // Stop the port listener for clients
             stopClientListeners();
@@ -604,8 +676,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
             // Start the port listener for secured clients
             createClientSSLListeners();
             startClientSSLListeners(localIPAddress);
-        }
-        else {
+        } else {
             JiveGlobals.setProperty("xmpp.socket.ssl.active", "false");
             // Stop the port listener for secured clients
             stopClientSSLListeners();
@@ -632,8 +703,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
             // Start the port listener for external components
             createComponentListener();
             startComponentListener();
-        }
-        else {
+        } else {
             JiveGlobals.setProperty("xmpp.component.socket.active", "false");
             // Stop the port listener for external components
             stopComponentListener();
@@ -654,8 +724,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
             // Start the port listener for s2s communication
             createServerListener(localIPAddress);
             startServerListener();
-        }
-        else {
+        } else {
             JiveGlobals.setProperty("xmpp.server.socket.active", "false");
             // Stop the port listener for s2s communication
             stopServerListener();
@@ -676,8 +745,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
             // Start the port listener for s2s communication
             createConnectionManagerListener();
             startConnectionManagerListener(localIPAddress);
-        }
-        else {
+        } else {
             JiveGlobals.setProperty("xmpp.multiplex.socket.active", "false");
             // Stop the port listener for s2s communication
             stopConnectionManagerListener();
@@ -822,7 +890,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
         // Set the executor that processors will use. Note that processors will use another executor
         // for processing events (i.e. incoming traffic)
         Executor ioExecutor = new ThreadPoolExecutor(
-            ioThreads + 1, ioThreads + 1, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>() );
+                ioThreads + 1, ioThreads + 1, 60, TimeUnit.SECONDS, new LinkedBlockingQueue<Runnable>());
         socketAcceptor = new SocketAcceptor(ioThreads, ioExecutor);
         // Set that it will be possible to bind a socket if there is a connection in the timeout state
         SocketAcceptorConfig socketAcceptorConfig = socketAcceptor.getDefaultConfig();
@@ -834,15 +902,15 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
         SocketSessionConfig socketSessionConfig = socketAcceptorConfig.getSessionConfig();
         //socketSessionConfig.setKeepAlive();
         int receiveBuffer = JiveGlobals.getIntProperty("xmpp.socket.buffer.receive", -1);
-        if (receiveBuffer > 0 ) {
+        if (receiveBuffer > 0) {
             socketSessionConfig.setReceiveBufferSize(receiveBuffer);
         }
         int sendBuffer = JiveGlobals.getIntProperty("xmpp.socket.buffer.send", -1);
-        if (sendBuffer > 0 ) {
+        if (sendBuffer > 0) {
             socketSessionConfig.setSendBufferSize(sendBuffer);
         }
         int linger = JiveGlobals.getIntProperty("xmpp.socket.linger", -1);
-        if (linger > 0 ) {
+        if (linger > 0) {
             socketSessionConfig.setSoLinger(linger);
         }
         socketSessionConfig.setTcpNoDelay(
@@ -855,7 +923,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
     // #####################################################################
 
     @Override
-	public void start() {
+    public void start() {
         super.start();
         createListeners();
         startListeners();
@@ -864,7 +932,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
     }
 
     @Override
-	public void stop() {
+    public void stop() {
         super.stop();
         stopClientListeners();
         stopClientSSLListeners();
