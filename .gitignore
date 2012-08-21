@@ -4,7 +4,7 @@
 /target/
 /work/
 /out/
-
+*.DS_Store
 # Package Files #
 *.war
 *.ear

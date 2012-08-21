@@ -137,21 +137,6 @@
     <property name="copy.dbscripts" value="true"/>
     <property name="overwrite" value="true"/>
 
-    <property name="installer.install4j.home" value="/home/j2ee-bamboo/install4j.4.0.5"/>
-    <property name="installer.src" value="${basedir}/build/installer"/>
-    <property name="installer.dest.dir" value="${release.dest.dir}"/>
-    <property name="installer.install4j.srcfile" value="${installer.src}/openfire.install4j"/>
-    <property name="installer.app_name" value="Openfire"/>
-    <property name="installer.app_short_name" value="openfire"/>
-    <property name="installer.product_name" value="openfire"/>
-    <property name="installer.application_id" value="6886-9911-0474-3571"/>
-    <property name="installer.unix_install_dir" value="openfire"/>
-    <property name="installer.windows_install_dir" value="Openfire"/>
-    <property name="installer.publisher" value="Ignite Realtime RTC Community"/>
-    <property name="installer.publisher_url" value="www.igniterealtime.org"/>
-    <property name="installer.file_prefix" value="${installer.app_short_name}"/>
-    <property name="installer.release_root_path" value="${release.dest.dir}"/>
-
     <property name="license.file.path" value="${docs.dir}/dist"/>
 
     <!-- For auto-running and debugging -->
@@ -392,7 +377,7 @@
             <fileset dir="${resources.dir}/jar" includes="**"/>
             <zipgroupfileset dir="${lib.merge.dir}" includes="*.jar"/>
             <manifest>
-                <attribute name="Built-By" value="Jive Software (www.igniterealtime.org)"/>
+                <attribute name="Built-By" value="Enterprise Management Inc. (www.emiva.net)"/>
             </manifest>
         </jar>
 
@@ -408,7 +393,7 @@
             <manifest>
                 <attribute name="Main-Class"
                            value="org.jivesoftware.openfire.starter.ServerStarter"/>
-                <attribute name="Built-By" value="Jive Software (www.igniterealtime.org)"/>
+                <attribute name="Built-By" value="Enterprise Management Inc. (www.emiva.net)"/>
             </manifest>
         </jar>
         <!-- Copy application dependent files -->
@@ -829,16 +814,6 @@
             </filterset>
         </copy>
 
-        <if>
-            <available file="${work.dir}/plugins-dev/enterprise/target/lib" />
-            <then>
-                <copy todir="${release.src.out.dir}/src/plugins/enterprise/lib" failonerror="false">
-                    <fileset dir="${work.dir}/plugins-dev/enterprise/target/lib">
-                        <include name="*-lib.jar" />
-                    </fileset>
-                </copy>
-            </then>
-        </if>
 
         <!-- Copy the i18n files to the resources dir. This way they won't be in the jar only -->
         <copy todir="${release.src.out.dir}/resources/i18n">
@@ -873,7 +848,7 @@
     </target>
 
     <!-- dist.bin =============================================================================== -->
-    <target name="dist.bin" depends="init, dist.init, plugins, javadoc, enterprise"
+    <target name="dist.bin" depends="init, dist.init, plugins, javadoc"
             description="Creates a binary distribution package">
 
         <mkdir dir="${release.out.dir}"/>
@@ -989,19 +964,6 @@
         </if>
     </target>
 
-    <target name="enterprise" if="do.enterprise">
-        <!-- Copy enterprise plugins. -->
-        <copy todir="${release.out.dir}">
-            <fileset dir="${work.dir}">
-                <include name="plugins/enterprise.jar"/>
-                <include name="plugins/fastpath.jar"/>
-                <include name="plugins/webchat.war"/>
-            </fileset>
-        </copy>
-        <!-- Remove GPL libs from distribution -->
-        <delete file="${release.out.dir}/lib/mysql.jar.pack"/>
-    </target>
-
     <!-- dailybuild ============================================================================ -->
     <target name="dailybuild" depends="init" description="Creates a daily build release">
         <property name="release.out.name" value="${dist.prefix}_${dailybuild.tstamp}"/>
@@ -1024,180 +986,6 @@
             <!-- dist.src above does this already, so don't need to do it twice -->
             <param name="no.javadoc" value="true"/>
         </antcall>
-    </target>
-
-    <!-- installer ============================================================================= -->
-    <target name="installer" description="Creates Openfire installers">
-        <condition property="install4j.not.ok" value="true">
-            <not>
-                <available file="${installer.install4j.home}/bin/install4j.jar"/>
-            </not>
-        </condition>
-        <fail if="install4j.not.ok"
-              message="Path to Install4j not set, see build.properties.template file."/>
-    
-        <antcall target="dist.bin">
-            <!-- Don't need package for installer build -->
-            <param name="no.package" value="true"/>
-        </antcall>
-
-        <antcall target="dist.src">
-            <!-- Already built javadoc with dist.bin above -->
-            <param name="no.javadoc" value="true"/>
-        </antcall>
-
-        <taskdef name="install4j"
-                 classname="com.install4j.Install4JTask"
-                 classpath="${installer.install4j.home}/bin/ant.jar"/>
-
-        <mkdir dir="${installer.dest.dir}"/>
-
-        <!-- Install4j doesn't support extra version info (like beta) correctly, so
-             define a special revision number.  -->
-        <if>
-            <equals arg1="${version.extra}" arg2=""/>
-            <then>
-                <property name="install4j.revision" value="${version.revision}"/>
-            </then>
-            <else>
-                <property name="install4j.revision" value="${version.revision}.${version.extra}"/>
-            </else>
-        </if>
-
-        <install4j projectfile="${installer.install4j.srcfile}" destination="${installer.dest.dir}">
-            <variable name="RELEASE_DIR" value="${dist.prefix}"/>
-            <variable name="VERSION_MAJOR" value="${version.major}"/>
-            <variable name="VERSION_MINOR" value="${version.minor}"/>
-            <variable name="VERSION_REVISION" value="${install4j.revision}"/>
-            <variable name="APP_NAME" value="${installer.app_name}"/>
-            <variable name="APP_SHORT_NAME" value="${installer.app_short_name}"/>
-            <variable name="PRODUCT_NAME" value="${installer.product_name}"/>
-            <variable name="PUBLISHER" value="${installer.publisher}"/>
-            <variable name="PUBLISHER_URL" value="${installer.publisher_url}"/>
-            <variable name="FILE_PREFIX" value="${installer.app_short_name}"/>
-            <variable name="RELEASE_ROOT_PATH" value="${installer.release_root_path}"/>
-            <variable name="APPLICATION_ID" value="${installer.application_id}"/>
-            <variable name="UNIX_INSTALL_DIR" value="${installer.unix_install_dir}"/>
-            <variable name="WINDOWS_INSTALL_DIR" value="${installer.windows_install_dir}"/>
-        </install4j>
-
-    </target>
-    
-    <!-- installer.rpm ========================================================================= -->
-    <property name="bundle.jre" value="true" />
-    <property name="target.work.subdir" value="rpm" />
-    <property name="target.rpm" value="${work.dir}/${target.work.subdir}" />
-    <property name="rpm.spec.file" value="${basedir}/build/rpm/openfire.spec"/>
-    <tstamp>
-        <format property="rpm.builddate" pattern="EEE MMM dd yyyy" locale="en"/>
-    </tstamp>
-    <target name="installer.rpm" depends="init, dist.init" description="Builds a rpm of openfire.">
-        <antcall target="dist.src"/>
-
-        <mkdir dir="${target.rpm}/SPECS" />
-        <mkdir dir="${target.rpm}/SOURCES" />
-        <mkdir dir="${target.rpm}/BUILD" />
-        <mkdir dir="${target.rpm}/SRPMS" />
-        <mkdir dir="${target.rpm}/RPMS" />
-
-        <copy tofile="${target.rpm}/SPECS/openfire.spec" file="${rpm.spec.file}" />
-        <if>
-            <equals arg1="${bundle.jre}" arg2="true"/>
-            <then>
-                <!-- Include bundled jre -->
-                <copy todir="${target.rpm}/SOURCES" file="${basedir}/build/rpm/jre-dist.tar.gz" />
-            </then>
-        </if>
-        <copy todir="${target.rpm}/SOURCES" file="${release.dest.dir}/${release.fullname.src}.tar.gz" />
-
-
-        <rpm specFile="openfire.spec"
-             topDir="${target.rpm}"
-             command="-ba --target i386 --define 'OPENFIRE_VERSION ${version}' --define 'OPENFIRE_SOURCE ${release.fullname.src}.tar.gz' --define 'OPENFIRE_BUILDDATE ${rpm.builddate}'"
-             failOnError="true"
-             />
-             
-        <copy todir="${release.dest.dir}" >
-            <fileset dir="${target.rpm}/SRPMS" />
-            <fileset dir="${target.rpm}/RPMS/i386" />
-        </copy>
-    </target>
-
-    <!-- installer.solaris ========================================================================= -->
-    <target name="installer.solaris" depends="init, dist.init, dist.bin" description="Builds a solaris pkg of openfire.">
-        <property name="target.solaris" value="${work.dir}/solaris" />
-        <property name="target.solaris.root" value="${target.solaris}/root" />
-<!--        <property name="target.solaris.pkg" value="${target.solaris}/pkg" /> -->
-        <property name="target.solaris.pkg" value="/var/spool/pkg" />
-        <property name="solaris.pkg.name" value="JSopenfire"/>
-        <property name="solaris.pkg.filename" value="${solaris.pkg.name}-${version}-ALL.pkg"/>
-        <tstamp>
-            <format property="solaris.builddate" pattern="yyyymmdd" locale="en"/>
-        </tstamp>
-
-        <antcall target="dist.bin">
-            <!-- Don't need package for installer build -->
-            <param name="no.package" value="true"/>
-        </antcall>
-
-        <mkdir dir="${target.solaris.root}" />
-        <mkdir dir="${target.solaris.root}/opt" />
-<!--        <mkdir dir="${target.solaris.pkg}" /> -->
-        <mkdir dir="${target.solaris.root}/opt/openfire/resources/solaris" />
-
-        <copy todir="${target.solaris.root}/opt/openfire">
-            <fileset dir="${release.out.dir}"/>
-        </copy>
-
-	<chmod perm="0755" file="${target.solaris.root}/opt/openfire/bin/openfirectl" />
-	<chmod perm="0755" file="${target.solaris.root}/opt/openfire/bin/openfire.sh" />
-	<chmod perm="0755" file="${target.solaris.root}/opt/openfire/bin/extra/embedded-db-viewer.sh" />
-
-	<delete file="${target.solaris.root}/opt/openfire/bin/openfire.bat" />
-	<delete file="${target.solaris.root}/opt/openfire/bin/openfire-dev.bat" />
-	<delete file="${target.solaris.root}/opt/openfire/bin/extra/openfire-launchd-wrapper.sh" />
-	<delete file="${target.solaris.root}/opt/openfire/bin/extra/openfired" />
-	<delete dir="${target.solaris.root}/opt/openfire/bin/extra/redhat" />
-	<delete file="${target.solaris.root}/opt/openfire/bin/extra/redhat-postinstall.sh" />
-	<delete file="${target.solaris.root}/opt/openfire/bin/extra/embedded-db-viewer.bat" />
-
-        <copy tofile="${target.solaris.root}/pkginfo" file="${basedir}/build/pkg/pkginfo" />
-        <copy tofile="${target.solaris.root}/opt/openfire/resources/solaris/openfire.xml" file="${basedir}/build/solaris/openfire.xml" />
-        <copy tofile="${target.solaris.root}/checkinstall" file="${basedir}/build/solaris/checkinstall" />
-        <copy tofile="${target.solaris.root}/postinstall" file="${basedir}/build/solaris/postinstall" />
-        <copy tofile="${target.solaris.root}/preremove" file="${basedir}/build/solaris/preremove" />
-
-        <copy tofile="${target.solaris.root}/Prototype" file="${basedir}/build/pkg/Prototype.template" overwrite="true"/>
-        <exec executable="/usr/bin/pkgproto" output="${target.solaris.root}/Prototype" append="true" failonerror="true">
-            <arg value="${target.solaris.root}/opt/openfire=/opt/openfire"/>
-        </exec>
-
-        <replaceregexp file="${target.solaris.root}/Prototype" match="(.* .* .* .*) .* .*" replace="\1 daemon daemon" byline="true"/>
-        <replaceregexp file="${target.solaris.root}/Prototype" match=".* (.* /opt/openfire/conf/openfire.xml=.* .* .* .*)" replace="e \1" byline="true"/>
-        <replaceregexp file="${target.solaris.root}/Prototype" match=".* (.* /opt/openfire/resources/security/keystore=.* .* .* .*)" replace="e \1" byline="true"/>
-        <replaceregexp file="${target.solaris.root}/Prototype" match=".* (.* /opt/openfire/resources/security/truststore=.* .* .* .*)" replace="e \1" byline="true"/>
-        <replaceregexp file="${target.solaris.root}/Prototype" match=".* (.* /opt/openfire/resources/security/client.truststore=.* .* .* .*)" replace="e \1" byline="true"/>
-        <replaceregexp file="${target.solaris.root}/Prototype" match=".* (.* /opt/openfire/bin/embedded-db.rc=.* .* .* .*)" replace="e \1" byline="true"/>
-
-        <exec executable="/usr/bin/pkgmk" dir="${target.solaris.root}" failonerror="true">
-            <arg value="-o"/>
-<!--            <arg value="-d ${target.solaris.pkg}"/> this doesn't work as advertised -->
-            <arg value="-v ${version}"/>
-            <arg value="-p ${solaris.builddate}"/>
-        </exec>
-
-        <touch file="${release.dest.dir}/${solaris.pkg.filename}"/>
-
-        <exec executable="/usr/bin/pkgtrans" failonerror="true">
-            <arg value="-s"/>
-            <arg value="${target.solaris.pkg}"/>
-            <arg value="${release.dest.dir}/${solaris.pkg.filename}"/>
-            <arg value="${solaris.pkg.name}"/>
-        </exec>
-
-        <gzip src="${release.dest.dir}/${solaris.pkg.filename}" destfile="${release.dest.dir}/${solaris.pkg.filename}.gz"/>
-
-        <delete dir="${target.solaris.pkg}/${solaris.pkg.name}"/>
     </target>
 
     <!-- plugins =============================================================================== -->
@@ -1639,15 +1427,6 @@
     <target name="clean" description="Cleans up all build-generated output">
         <delete dir="${work.dir}"/>
         <delete dir="${target.dir}"/>
-
-        <!-- Delete the Enterprise plugin in the openfire plugin directory, if this isn't an enterprise build -->
-        <if>
-            <not><equals arg1="${do.enterprise}" arg2="true"/></not>
-            <then>
-                <!-- Copy pre-configured openfireHome dir -->
-                <delete dir="${basedir}/src/plugins/enterprise" />
-            </then>
-        </if>
     </target>
 
     <!-- clean-jspc ============================================================================ -->
@@ -1670,183 +1449,6 @@
         </delete>
         <!--<delete dir="${plugin.dest.dir}"/> -->
         <delete dir="${plugin.dev.dest.dir}"/>
-    </target>
-
-    <!-- Mac installer ========================================================================= -->
-    <property name="target.osx" value="${work.dir}/osx" />
-    <property name="mac.pkg.dir" value="${target.osx}/macpkg"/>
-    <property name="mac.dmg.dir" value="${target.osx}/Openfire"/>
-    <property name="mac.dmg.file" value="${release.dest.dir}/openfire.dmg"/>
-    <property name="mac.template" value="${target.osx}/template"/>
-    <property name="mac.prefpane.build" value="${target.osx}/prefPane"/>
-
-    <target name="mac.delete">
-        <delete dir="${mac.pkg.dir}" failonerror="false"/>
-        <delete dir="${mac.dmg.dir}" failonerror="false"/>
-        <delete file="${mac.dmg.file}" failonerror="false"/>
-        <delete dir="${mac.template}" failonerror="false"/>
-        <delete dir="${mac.prefpane.build}" failonerror="false"/>
-    </target>
-    
-    <target name="mac.prefpane">
-    <!-- install will put it in macpkg/Library/PreferencePanes/ as specified in the target settings -->
-        <copy todir="${mac.prefpane.build}" >
-            <fileset dir="${basedir}/build/osx/openfirePrefPane" />
-        </copy>
-        <exec executable="/usr/bin/xcodebuild" dir="${mac.prefpane.build}" failonerror="true">
-            <arg value="-configuration"/>
-            <arg value="Deployment"/>
-            <arg value="-target"/>
-            <arg value="Openfire"/>
-            <arg value="clean"/>
-            <arg value="install"/>
-        </exec>
-    </target>
-
-    <target name="mac.prepare" depends="mac.delete,openfire, mac.prefpane">
-        <copy todir="${mac.pkg.dir}/usr/local/openfire">
-            <fileset dir="${target.dir}/openfire">
-                <exclude name="**/openfired"/>
-                <exclude name="**/openfirectl"/>
-                <exclude name="**/redhat"/>
-                <exclude name="**/embedded-db*"/>
-                <exclude name="**/redhat-postinstall.sh"/>
-            </fileset>
-        </copy>
-        <mkdir dir="${mac.pkg.dir}/Library/LaunchDaemons"/>
-        <copy file="${basedir}/build/osx/org.jivesoftware.openfire.plist"
-              todir="${mac.pkg.dir}/Library/LaunchDaemons"/>
-        <mkdir dir="${mac.dmg.dir}"/>
-        <mkdir dir="${mac.pkg.dir}/Library/PreferencePanes"/>
-        <copy todir="${mac.pkg.dir}/Library/PreferencePanes">
-            <fileset dir="${mac.prefpane.build}/build/UninstalledProducts/"/>
-        </copy>
-        <chmod perm="o+x">
-            <fileset dir="${mac.pkg.dir}/Library/PreferencePanes/Openfire.prefPane/Contents/MacOS/">
-                <include name="HelperTool"/>
-            </fileset>
-        </chmod>
-        <chmod perm="ug+x">
-            <fileset dir="${mac.pkg.dir}/usr/local/openfire/bin">
-                <include name="extra/openfire-launchd-wrapper.sh"/>
-            </fileset>
-            <fileset dir="${basedir}/build/osx/resources"/>
-        </chmod>
-        <mkdir dir="${mac.template}/.background"/>
-        <copy todir="${mac.template}/.background">
-            <fileset file="${basedir}/build/osx/dmgBackground.png"/>
-        </copy>
-    </target>
-
-    <!-- Create a Mac OS X installer -->
-    <target name="mac.pkg" depends="mac.prepare">
-        <tstamp>
-            <format property="copyrightyear" pattern="yyyy"/>
-        </tstamp>
-        <copy todir="${target.osx}" file="${basedir}/build/osx/Info.plist"/>
-        <replace file="${target.osx}/Info.plist">
-            <replacefilter token="%VERSION%" value="${version}"/>
-            <replacefilter token="%VERSIONMAJOR%" value="${version.major}"/>
-            <replacefilter token="%VERSIONMINOR%" value="${version.minor}"/>
-            <replacefilter token="%COPYRIGHT%" value="${copyrightyear}"/>
-        </replace>
-        <copy todir="${target.osx}" file="${basedir}/build/osx/Description.plist"/>
-        <exec executable="/Developer/usr/bin/packagemaker">
-            <arg value="-build"/>
-            <arg value="-f"/>
-            <arg value="${mac.pkg.dir}"/>
-            <arg value="-i"/>
-            <arg value="${target.osx}/Info.plist"/>
-            <arg value="-d"/>
-            <arg value="${target.osx}/Description.plist"/>
-            <arg value="-r"/>
-            <arg value="${basedir}/build/osx/resources"/>
-            <!--<arg value="-proj"/>
-            <arg value="${basedir}/build/osx/openfire.pmproj"/> -->
-            <arg value="-p"/>
-            <arg value="${mac.template}/Openfire.pkg"/>
-            <arg value="-ds"/>
-            <arg value="-v"/>
-        </exec>
-    </target>
-
-    <target name="installer.mac" depends="mac.pkg" description="Creates a Mac OS X package">
-        <mkdir dir="${release.dest.dir}"/>
-        <exec executable="hdiutil" failonerror="true">
-            <arg line="create -srcfolder '${mac.template}' -volname 'Openfire' -fs HFS+ -fsargs '-c c=64,a=16,e=16' -format UDRW '${target.osx}/tmp.dmg'"/>
-        </exec>
-        <exec executable="hdiutil" failonerror="true">
-            <arg line="attach '${target.osx}/tmp.dmg' -readwrite -noverify -noautoopen -noidme -mountpoint '${mac.dmg.dir}'"/>
-        </exec>
-<!-- OF-386 - commented out since it wasn't working with our Bamboo remote agent // TODO: fix it
-        <exec executable="osascript" dir="${basedir}/build/osx/" failonerror="true">
-            <arg value="dmg_openfire.scpt"/>
-            <arg value="Openfire"/>
-            <arg value="images"/>
-            <arg value="360"/>
-            <arg value="200"/>
-            <arg value="450"/>
-            <arg value="220"/>
-            <arg value="128"/>
-        </exec>
--->
-        <exec executable="hdiutil" failonerror="true">
-            <arg line="detach ${mac.dmg.dir} -quiet -force"/>
-        </exec>
-        <exec executable="hdiutil" failonerror="true">
-            <arg line="convert ${target.osx}/tmp.dmg -format UDZO -imagekey zlib-level=9 -o ${mac.dmg.file}"/>
-        </exec>
-        <delete file="${target.osx}/tmp.dmg"/>
-    </target>
-
-    <!-- Debian package ========================================================================= -->
-    <property name="debian.dir" value="${basedir}/build/debian"/>
-    <property name="debian.release.dir" value="${release.dest.dir}/debian"/>
-    <property name="debian.version" value="${version.major}.${version.minor}.${version.revision}"/>
-    <property name="debian.work.dir" value="${work.dir}/debian/${dist.prefix}-${debian.version}"/>
-    <tstamp>
-        <format property="debian.builddate" pattern="EEE, dd MMM yyyy HH:mm:ss Z" locale="en"/>
-    </tstamp>
-
-    <target name="installer.debian" depends="dist.src" description="Creates a Debian package">
-        <!-- Copy the sources to some place to work -->
-        <copy todir="${debian.work.dir}"> 
-            <fileset dir="${release.src.out.dir}">
-                <include name="**/*" />
-            </fileset>
-        </copy>
-
-        <!-- Copy build/debian into workdir -->
-        <copy todir="${debian.work.dir}/debian">
-            <fileset dir="${debian.dir}/" includes="**/*"/>
-            <filterset>
-                <filter token="builddate" value="${debian.builddate}"/>
-                <filter token="version" value="${debian.version}"/>
-            </filterset>
-        </copy>
-
-        <!-- Make the copied 'rules' executable -->
-        <chmod file="${debian.work.dir}/debian/rules" perm="755" />
-
-        <!-- Create the package -->
-        <exec executable="dpkg-buildpackage" dir="${debian.work.dir}" failonerror="true">
-            <!-- Allow building without root-privs -->
-            <arg line="-rfakeroot"/>
-            <!-- Don't sign source -->
-            <arg line="-us"/>
-            <!-- Don't sign changelog -->
-            <arg line="-uc"/>
-        </exec>
-
-	<!-- Copy the resulting files into target -->
-	<copy todir="${debian.release.dir}">
-            <fileset dir="${debian.work.dir}/.." followsymlinks="false">
-		<include name="**/*.deb" />
-		<include name="**/*.changes" />
-		<include name="**/*.dsc" />
-		<include name="**/*.gz" />
-            </fileset>
-        </copy>
     </target>
 
 </project>
