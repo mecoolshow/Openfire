@@ -13,7 +13,7 @@
     Build Requirements:
 
         * Ant 1.6 or 1.7 (including optional tasks)
-        * JDK 1.5 or higher
+        * JDK 1.7 or higher
         * jUnit in your Ant or Java classpath
 -->
 
@@ -232,13 +232,13 @@
         <condition property="java.not.ok" value="true">
             <not>
                 <or>
-                    <contains string="${ant.java.version}" substring="1.5"/>
+                    <contains string="${ant.java.version}" substring="1.7"/>
                     <contains string="${ant.java.version}" substring="1.6"/>
                 </or>
             </not>
         </condition>
         <fail if="ant.not.ok" message="Must use Ant 1.6.x or 1.7.x to build Openfire"/>
-        <fail if="java.not.ok" message="Must use JDK 1.5.x or higher to build Openfire"/>
+        <fail if="java.not.ok" message="Must use JDK 1.7.x or higher to build Openfire"/>
 
         <tstamp/>
         <tstamp>
@@ -276,8 +276,8 @@
                 destdir="${compile.dir}"
                 includeAntRuntime="no"
                 debug="on"
-                source="1.5"
-                target="1.5"
+                source="1.7"
+                target="1.7"
                 >
             <src path="${src.java.dir}"/>
             <patternset refid="compile.sources"/>
@@ -296,8 +296,8 @@
                         destdir="${overlay.compile.dir}"
                         includeAntRuntime="no"
                         debug="on"
-                        source="1.5"
-                        target="1.5"
+                        source="1.7"
+                        target="1.7"
                         >
                     <src path="${overlay.src.dir}"/>
                     <patternset refid="compile.sources"/>
@@ -491,7 +491,7 @@
             <classpath>
                 <path refid="javadoc.dependencies"/>
             </classpath>
-            <link offline="true" href="http://java.sun.com/j2se/1.5.0/docs/api/"
+            <link offline="true" href="http://java.sun.com/j2se/1.7.0/docs/api/"
                   packagelistLoc="${javadoc.src.dir}/jdk15"/>
         </javadoc>
     </target>
@@ -544,8 +544,8 @@
                 destdir="${jspc.classes.dest.dir}"
                 includeAntRuntime="no"
                 debug="on"
-                source="1.5"
-                target="1.5"
+                source="1.7"
+                target="1.7"
                 includes="org/jivesoftware/openfire/admin/**/*.java"
                 >
             <src path="${jspc.java.dest.dir}"/>
@@ -594,8 +594,8 @@
                 destdir="${test.classes.dest.dir}"
                 includeAntRuntime="no"
                 debug="on"
-                source="1.5"
-                target="1.5"
+                source="1.7"
+                target="1.7"
                 >
             <src path="${src.test.java.dir}"/>
             <patternset refid="test.sources"/>
@@ -1305,8 +1305,8 @@
                         destdir="${plugin.dev.dest.dir}/@{plugin}/target/classes"
                         includeAntRuntime="no"
                         debug="on"
-                        source="1.5"
-                        target="1.5"
+                        source="1.7"
+                        target="1.7"
                         >
                     <src path="@{pluginsrc}/@{plugin}/src/java"/>
                     <classpath>
@@ -1345,7 +1345,7 @@
                             destdir="@{pluginlib}/classes"
                             includeAntRuntime="no"
                             debug="on"
-                            source="1.5"
+                            source="1.7"
                             includes="**/*.java"
                         >
                             <src path="@{pluginlib}/source"/>
@@ -1513,8 +1513,8 @@
                                 destdir="${plugin.dev.dest.dir}/@{plugin}/target/jspc/classes"
                                 includeAntRuntime="no"
                                 debug="on"
-                                source="1.5"
-                                target="1.5"
+                                source="1.7"
+                                target="1.7"
                                 >
                             <src path="${plugin.dev.dest.dir}/@{plugin}/target/jspc/java"/>
                             <classpath>
