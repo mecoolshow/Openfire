@@ -75,7 +75,7 @@
     String interfaceName = JiveGlobals.getXMLProperty("network.interface");
 
     ConnectionManagerImpl connectionManager = ((ConnectionManagerImpl) XMPPServer.getInstance().getConnectionManager());
-    SocketAcceptor socketAcceptor = connectionManager.getSocketAcceptor();
+
     SocketAcceptor sslSocketAcceptor = connectionManager.getSSLSocketAcceptor();
     SocketAcceptor multiplexerSocketAcceptor = connectionManager.getMultiplexerSocketAcceptor();
     ServerPort serverPort = null;
@@ -445,30 +445,6 @@
     </tr>
 </thead>
 <tbody>
-    <% if (socketAcceptor != null) {
-        for (SocketAddress socketAddress : socketAcceptor.getManagedServiceAddresses()) {
-            InetSocketAddress address = (InetSocketAddress) socketAddress;
-    %>
-    <tr>
-        <td><%= "0.0.0.0".equals(address.getHostName()) ? LocaleUtils.getLocalizedString("ports.all_ports") : address.getHostName() %></td>
-        <td><%= address.getPort() %></td>
-        <% try { %>
-        <% if (!CertificateManager.isRSACertificate(SSLConfig.getKeyStore(), XMPPServer.getInstance().getServerInfo().getXMPPDomain()) || LocalClientSession.getTLSPolicy() == org.jivesoftware.openfire.Connection.TLSPolicy.disabled) { %>
-            <td><img src="images/blank.gif" width="1" height="1" alt=""/></td>
-        <% } else { %>
-            <td><img src="images/lock.gif" width="16" height="16" border="0" alt=""/></td>
-        <% } %>
-        <% } catch (Exception e) { %>
-            <td><img src="images/blank.gif" width="1" height="1" alt=""/></td>
-        <% } %>
-        <td><fmt:message key="ports.client_to_server" /></td>
-        <td><fmt:message key="ports.client_to_server.desc">
-            <fmt:param value="<a href='ssl-settings.jsp'>" />
-            <fmt:param value="</a>" />
-            </fmt:message>
-        </td>
-    </tr>
-    <% } } %>
     <% if (sslSocketAcceptor != null) {
         for (SocketAddress socketAddress : sslSocketAcceptor.getManagedServiceAddresses()) {
             InetSocketAddress address = (InetSocketAddress) socketAddress;

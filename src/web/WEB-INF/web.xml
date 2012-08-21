@@ -84,11 +84,6 @@
         <url-pattern>/*</url-pattern>
     </filter-mapping>
 
-    <filter-mapping>
-        <filter-name>AuthCheck</filter-name>
-        <servlet-name>dwr-invoker</servlet-name>
-    </filter-mapping>
-
 
     <listener>
         <listener-class>org.jivesoftware.openfire.XMPPContextListener</listener-class>
@@ -104,11 +99,6 @@
         <servlet-name>FaviconServlet</servlet-name>
         <servlet-class>org.jivesoftware.util.FaviconServlet</servlet-class>
         <load-on-startup>1</load-on-startup>
-    </servlet>
-
-    <servlet>
-        <servlet-name>dwr-invoker</servlet-name>
-        <servlet-class>uk.ltd.getahead.dwr.DWRServlet</servlet-class>
     </servlet>
 
     <servlet>
@@ -137,16 +127,6 @@
     <servlet-mapping>
         <servlet-name>PluginIconServlet</servlet-name>
         <url-pattern>/geticon</url-pattern>
-    </servlet-mapping>
-
-    <!--<servlet-mapping>
-        <servlet-name>WebDAVLiteServlet</servlet-name>
-        <url-pattern>/webdav/*</url-pattern>
-    </servlet-mapping>-->
-
-    <servlet-mapping>
-        <servlet-name>dwr-invoker</servlet-name>
-        <url-pattern>/dwr/*</url-pattern>
     </servlet-mapping>
 
     <jsp-config>

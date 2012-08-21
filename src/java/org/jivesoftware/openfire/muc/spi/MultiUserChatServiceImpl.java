@@ -1057,12 +1057,12 @@ public class MultiUserChatServiceImpl implements Component, MultiUserChatService
 
         logPeek.scheduleAtFixedRate(new Runnable() {
             public void run() {
-                Long currentArchiveSize = archivedMessages.get();
+                /*Long currentArchiveSize = archivedMessages.get();
 
                 Log.warn(String.format("Log Queue has %d entries. %s entries written per second (averaged).",
                         logQueue.size(), ((currentArchiveSize - lastNumber) / 10)).toString());
 
-                lastNumber = currentArchiveSize;
+                lastNumber = currentArchiveSize;*/
             }
         }, 10, 10, TimeUnit.SECONDS);
 

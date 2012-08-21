@@ -88,12 +88,13 @@ import org.jivesoftware.util.LocaleUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import net.emiva.openfire.netty.*;
+
 
 public class ConnectionManagerImpl extends BasicModule implements ConnectionManager, CertificateEventListener {
 
     private static final Logger Log = LoggerFactory.getLogger(ConnectionManagerImpl.class);
 
-    private SocketAcceptor socketAcceptor;
     private SocketAcceptor sslSocketAcceptor;
     private SocketAcceptor componentAcceptor;
     private SocketAcceptThread serverSocketThread;
@@ -102,8 +103,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
 
     /*Netty*/
 
-    private ServerBootstrap bootstrap;
-    private ExecutionHandler executionHandler;
+    private NetworkServer clientServer;
 
     /*Netty*/
 
@@ -245,75 +245,6 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
         }
     }
 
-
-    private void temp() {
-        if (isConnectionManagerListenerEnabled()) {
-            int port = getConnectionManagerListenerPort();
-
-            try {
-                // Listen on a specific network interface if it has been set.
-                String interfaceName = JiveGlobals.getXMLProperty("network.interface");
-                InetAddress bindInterface = null;
-                if (interfaceName != null) {
-                    if (interfaceName.trim().length() > 0) {
-                        bindInterface = InetAddress.getByName(interfaceName);
-                    }
-                }
-
-                executionHandler = new ExecutionHandler(new OrderedMemoryAwareThreadPoolExecutor(80, 0, 0));
-
-                bootstrap = new ServerBootstrap(
-                        new NioServerSocketChannelFactory(
-                                Executors.newCachedThreadPool(),
-                                Executors.newCachedThreadPool()));
-
-                bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
-                    @Override
-                    public ChannelPipeline getPipeline() throws Exception {
-                        final ChannelPipeline pipeline = Channels.pipeline();
-
-                        pipeline.addLast("decoder", new XMLFrameDecoder());
-                        pipeline.addLast("encoder", new StringEncoder());
-                        pipeline.addLast("executor", executionHandler);
-
-                        //pipeline.addLast("handler", new ClientConnectionHandler());
-
-                        return pipeline;
-                    }
-                });
-
-                bootstrap.setOption("child.sendBufferSize", 1048576);
-                bootstrap.setOption("child.receiveBufferSize", 1048576);
-                bootstrap.setOption("receiveBufferSizePredictorFactory", new AdaptiveReceiveBufferSizePredictorFactory());
-                bootstrap.setOption("writeBufferLowWaterMark", 32 * 1024);
-                bootstrap.setOption("writeBufferHighWaterMark", 64 * 1024);
-                bootstrap.setOption("child.tcpNoDelay", true);
-
-
-                try {
-                    bootstrap.bind(new InetSocketAddress(bindInterface, port));
-                    Log.info("Listening on port {}", port);
-
-                } catch (ChannelException ex) {
-                    Log.error("Could not bind on port " + port, ex);
-                    System.exit(0);
-                }
-
-
-                ports.add(new ServerPort(port, serverName, localIPAddress, false, null, ServerPort.Type.connectionManager));
-
-                List<String> params = new ArrayList<String>();
-                params.add(Integer.toString(port));
-                Log.info(LocaleUtils.getLocalizedString("startup.multiplexer", params));
-            } catch (Exception e) {
-                System.err.println("Error starting multiplexer listener on port " + port + ": " +
-                        e.getMessage());
-                Log.error(LocaleUtils.getLocalizedString("admin.error.socket-setup"), e);
-            }
-
-        }
-    }
-
     private void startConnectionManagerListener(String localIPAddress) {
         // Start multiplexers socket unless it's been disabled.
         if (isConnectionManagerListenerEnabled()) {
@@ -424,21 +355,8 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
     private void createClientListeners() {
         // Start clients plain socket unless it's been disabled.
         if (isClientListenerEnabled()) {
-            // Create SocketAcceptor with correct number of processors
-            socketAcceptor = buildSocketAcceptor();
-            // Customize Executor that will be used by processors to process incoming stanzas
-            ExecutorThreadModel threadModel = ExecutorThreadModel.getInstance("client");
-            int eventThreads = JiveGlobals.getIntProperty("xmpp.client.processing.threads", 16);
-            ThreadPoolExecutor eventExecutor = (ThreadPoolExecutor) threadModel.getExecutor();
-            eventExecutor.setCorePoolSize(eventThreads + 1);
-            eventExecutor.setMaximumPoolSize(eventThreads + 1);
-            eventExecutor.setKeepAliveTime(60, TimeUnit.SECONDS);
-
-            socketAcceptor.getDefaultConfig().setThreadModel(threadModel);
-            // Add the XMPP codec filter
-            socketAcceptor.getFilterChain().addFirst("xmpp", new ProtocolCodecFilter(new XMPPCodecFactory()));
-            // Kill sessions whose outgoing queues keep growing and fail to send traffic
-            socketAcceptor.getFilterChain().addAfter("xmpp", "outCap", new StalledSessionsFilter());
+            int port = getClientListenerPort();
+            clientServer = new NetworkServer(port, serverName,  false);
         }
     }
 
@@ -447,17 +365,7 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
         if (isClientListenerEnabled()) {
             int port = getClientListenerPort();
             try {
-                // Listen on a specific network interface if it has been set.
-                String interfaceName = JiveGlobals.getXMLProperty("network.interface");
-                InetAddress bindInterface = null;
-                if (interfaceName != null) {
-                    if (interfaceName.trim().length() > 0) {
-                        bindInterface = InetAddress.getByName(interfaceName);
-                    }
-                }
-                // Start accepting connections
-                socketAcceptor
-                        .bind(new InetSocketAddress(bindInterface, port), new ClientConnectionHandler(serverName));
+                clientServer.run();
 
                 ports.add(new ServerPort(port, serverName, localIPAddress, false, null, ServerPort.Type.client));
 
@@ -473,15 +381,14 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
     }
 
     private void stopClientListeners() {
-        if (socketAcceptor != null) {
-            socketAcceptor.unbindAll();
+        if (clientServer != null) {
+            clientServer.stop();
             for (ServerPort port : ports) {
                 if (port.isClientPort() && !port.isSecure()) {
                     ports.remove(port);
                     break;
                 }
             }
-            socketAcceptor = null;
         }
     }
 
@@ -769,10 +676,6 @@ public class ConnectionManagerImpl extends BasicModule implements ConnectionMana
             createClientListeners();
             startClientListeners(localIPAddress);
         }
-    }
-
-    public SocketAcceptor getSocketAcceptor() {
-        return socketAcceptor;
     }
 
     public int getClientListenerPort() {
